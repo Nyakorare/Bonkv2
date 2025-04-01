@@ -1,5 +1,5 @@
 import { IonContent, IonPage } from '@ionic/react';
-import { FaArrowLeft } from 'react-icons/fa';
+import { FaArrowLeft, FaUsers, FaInfoCircle } from 'react-icons/fa'; // Added icons
 import { useHistory } from 'react-router-dom';
 
 const Info: React.FC = () => {
@@ -32,7 +32,9 @@ const Info: React.FC = () => {
           <div className="flex-1 overflow-y-auto">
             {/* Our Team Section */}
             <div className="px-4 py-4">
-              <h2 className="text-white text-2xl font-bold mb-3 text-center">Our Team</h2>
+              <h2 className="text-white text-2xl font-bold mb-3 text-center flex items-center justify-center">
+                <FaUsers className="mr-2" /> Our Team
+              </h2>
               <div className="flex overflow-x-auto pb-3 space-x-4 scrollbar-hide">
                 {[
                   { name: 'Glenn Galbadores', position: 'Project Manager & Lead Developer' },
@@ -63,8 +65,8 @@ const Info: React.FC = () => {
             <div className="px-4 space-y-4 pb-4">
               {/* About Team */}
               <div className="bg-white rounded-2xl shadow-xl p-5">
-                <h2 className="text-xl font-bold text-center text-gray-800 mb-3">
-                  About Us
+                <h2 className="text-xl font-bold text-center text-gray-800 mb-3 flex items-center justify-center">
+                  <FaInfoCircle className="mr-2" /> About Us
                 </h2>
                 <p className="text-gray-600 text-sm leading-relaxed">
                   Our team is composed of passionate individuals dedicated to delivering a seamless and secure financial management experience. 
@@ -74,8 +76,8 @@ const Info: React.FC = () => {
 
               {/* About App */}
               <div className="bg-white rounded-2xl shadow-xl p-5">
-                <h2 className="text-xl font-bold text-center text-gray-800 mb-3">
-                  About Bonk
+                <h2 className="text-xl font-bold text-center text-gray-800 mb-3 flex items-center justify-center">
+                  <FaInfoCircle className="mr-2" /> About Bonk
                 </h2>
                 <p className="text-gray-600 text-sm leading-relaxed">
                   Bank on Keeps is a comprehensive financial management application designed to help users take control of their personal finances. 

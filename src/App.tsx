@@ -8,6 +8,13 @@ import Register from './pages/userAuth/register'; // Import the Register compone
 import OtpPage from './pages/userAuth/otp'; // Import the OTP page
 import Dashboard from './pages/userDashboard/dashboard'; // Import the Dashboard component
 import Loading from './pages/appAbout/loading'; // Import the Loading component
+import Deposit from './pages/userDashboard/deposit'; // Import the Deposit component
+import Withdraw from './pages/userDashboard/withdraw'; // Import the Withdraw component
+import Transfer from './pages/userDashboard/transfer'; // Import the Transfer component
+import TransactionHistory from './pages/userDashboard/transaction'; // Import the TransactionHistory component
+import Card from './pages/userDashboard/card'; // Import the Card component
+import Investment from './pages/userDashboard/investment'; // Import the Investment component
+import Settings from './pages/userDashboard/settings'; // Import the Settings component
 
 /* Tailwind styles */
 import './theme/tailwind.css'
@@ -53,11 +60,32 @@ const App: React.FC = () => (
         <Route exact path="/otp">
           <OtpPage />
         </Route>
+        <Route exact path="/settings">
+          <Settings />
+        </Route>
         <Route exact path="/dashboard">
           <Dashboard />
         </Route>
         <Route exact path="/loading">
           <Loading />
+        </Route>
+        <Route exact path="/deposit">
+          <Deposit />
+        </Route>
+        <Route exact path="/withdraw">
+          <Withdraw />
+        </Route>
+        <Route exact path="/transfer">
+          <Transfer />
+        </Route>
+        <Route exact path="/transactions">
+          <TransactionHistory />
+        </Route>
+        <Route exact path="/card">
+          <Card />
+        </Route>
+        <Route exact path="/investment">
+          <Investment />
         </Route>
         <Route exact path="/">
           <Redirect to="/home" />
