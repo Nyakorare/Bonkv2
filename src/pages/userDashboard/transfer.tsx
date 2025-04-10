@@ -59,7 +59,7 @@ const Transfer: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Account Number"
-                  className="flex-1 outline-none bg-transparent"
+                  className="flex-1 outline-none bg-transparent text-black placeholder-gray-500"
                 />
               </div>
               <div className="flex items-center border border-gray-300 rounded-lg p-2 bg-gray-100">
@@ -67,7 +67,7 @@ const Transfer: React.FC = () => {
                 <input
                   type="number"
                   placeholder="Amount"
-                  className="flex-1 outline-none bg-transparent"
+                  className="flex-1 outline-none bg-transparent text-black placeholder-gray-500"
                 />
               </div>
               <button className="bg-[#5EC95F] text-white font-bold py-2 px-4 rounded-lg hover:bg-[#4caf50] transition">

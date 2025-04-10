@@ -50,12 +50,12 @@ const TransactionHistory: React.FC = () => {
                             {/* Date Filter */}
                             <input 
                                 type="date" 
-                                className="border border-gray-200 rounded-md p-2 text-sm"
+                                className="border border-gray-200 rounded-md p-2 text-sm text-black"
                                 onChange={(e) => console.log('Selected date:', e.target.value)} 
                             />
                             {/* Transaction Type Filter */}
                             <select 
-                                className="border border-gray-200 rounded-md p-2 text-sm"
+                                className="border border-gray-200 rounded-md p-2 text-sm text-black"
                                 onChange={(e) => console.log('Selected type:', e.target.value)}
                             >
                                 <option value="">All Types</option>

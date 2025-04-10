@@ -1,12 +1,112 @@
 import { IonContent, IonPage } from '@ionic/react';
-import { FaArrowLeft, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaArrowLeft } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
 import { useState } from 'react';
+import { supabase } from '../../supabaseClient';
 
 const Register: React.FC = () => {
   const history = useHistory();
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  // Form fields
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    fullName: '',
+  });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const validateForm = () => {
+    if (!formData.email || !formData.password || !formData.confirmPassword || !formData.fullName) {
+      setError('Please fill in all fields');
+      return false;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return false;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return false;
+    }
+
+    // Basic email validation
+    if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
+      setError('Please enter a valid email address');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleRegister = async () => {
+    try {
+      setError('');
+      setLoading(true);
+
+      if (!validateForm()) return;
+
+      // Sign up with Supabase
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName,
+            email_confirmed: true
+          }
+        }
+      });
+
+      if (error) {
+        if (error.message.includes('User already registered')) {
+          setError('This email is already registered. Please try logging in instead.');
+        } else if (error.message.includes('password')) {
+          setError('Password must be at least 6 characters long');
+        } else {
+          setError(`Registration failed: ${error.message}`);
+        }
+        return;
+      }
+
+      if (!data.user) {
+        setError('Registration failed. Please try again.');
+        return;
+      }
+
+      // Sign in the user immediately after registration
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password
+      });
+
+      if (signInError) {
+        setError('Registration successful but login failed. Please try logging in manually.');
+        history.push('/login');
+        return;
+      }
+
+      // Redirect to dashboard on successful registration and login
+      history.push('/dashboard');
+
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred during registration');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <IonPage>
@@ -37,77 +137,59 @@ const Register: React.FC = () => {
           {/* Registration Form */}
           <div className="flex-1 flex flex-col justify-center items-center w-full px-6">
             <div className="w-full max-w-md space-y-4">
-              {/* Username */}
+              {error && (
+                <div className="p-2 bg-red-100 text-red-700 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+              
+              {/* Full Name */}
               <input
                 type="text"
-                placeholder="Username"
-                className="w-full p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
+                name="fullName"
+                placeholder="Full Name"
+                value={formData.fullName}
+                onChange={handleChange}
+                className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
               />
-
-              {/* First Name and Last Name */}
-              <div className="flex space-x-4">
-                <input
-                  type="text"
-                  placeholder="First Name"
-                  className="w-1/2 p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
-                />
-                <input
-                  type="text"
-                  placeholder="Last Name"
-                  className="w-1/2 p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
-                />
-              </div>
 
               {/* Email */}
               <input
                 type="email"
+                name="email"
                 placeholder="Email"
-                className="w-full p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
+                value={formData.email}
+                onChange={handleChange}
+                className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
               />
 
-              {/* Address */}
+              {/* Password */}
               <input
-                type="text"
-                placeholder="Address"
-                className="w-full p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
+                type="password"
+                name="password"
+                placeholder="Password"
+                value={formData.password}
+                onChange={handleChange}
+                className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
               />
-              
-              {/* Password with toggle */}
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Password"
-                  className="w-full p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B] pr-10"
-                />
-                <button
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
-                </button>
-              </div>
-              
-              {/* Confirm Password with toggle */}
-              <div className="relative">
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  placeholder="Confirm Password"
-                  className="w-full p-3 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[#4AB54B] pr-10"
-                />
-                <button
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                >
-                  {showConfirmPassword ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
-                </button>
-              </div>
+
+              {/* Confirm Password */}
+              <input
+                type="password"
+                name="confirmPassword"
+                placeholder="Confirm Password"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
+              />
               
               {/* Register Button */}
               <button
                 className="w-full bg-[#2C2C2C] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3C3C3C] transition-colors"
-                onClick={() => history.push('/otp')}
+                onClick={handleRegister}
+                disabled={loading}
               >
-                Register
+                {loading ? 'Processing...' : 'Register'}
               </button>
             </div>
           </div>

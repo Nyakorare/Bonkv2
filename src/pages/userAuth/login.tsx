@@ -1,15 +1,72 @@
 import { IonContent, IonPage } from '@ionic/react';
 import { FaFingerprint, FaInfoCircle } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
+import { useState } from 'react';
+import { supabase } from '../../supabaseClient';
 
-const Home: React.FC = () => {
+const Login: React.FC = () => {
   const history = useHistory();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      
+      // Validate inputs
+      if (!email || !password) {
+        setError('Please fill in all fields');
+        return;
+      }
+
+      // Sign in with Supabase
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (signInError) {
+        throw signInError;
+      }
+
+      if (!data.user) {
+        throw new Error('No user data returned');
+      }
+
+      // Check if user has an active account
+      const { data: accountData, error: accountError } = await supabase
+        .from('accounts')
+        .select('status')
+        .eq('user_id', data.user.id)
+        .single();
+
+      if (accountError) {
+        throw accountError;
+      }
+
+      if (!accountData || accountData.status !== 'active') {
+        throw new Error('Account is not active. Please contact support.');
+      }
+
+      // Store user session and redirect
+      localStorage.setItem('authToken', data.session?.access_token || '');
+      history.push('/dashboard');
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <IonPage>
       <IonContent 
         fullscreen 
-        scrollY={false} // Disable scrolling
+        scrollY={false}
         style={{
           '--overflow': 'hidden',
           'height': '100vh',
@@ -35,24 +92,31 @@ const Home: React.FC = () => {
           {/* Login Form - centered */}
           <div className="flex-1 flex flex-col justify-center items-center w-full px-8">
             <div className="w-full max-w-md">
+              {error && (
+                <div className="mb-4 p-2 bg-red-100 text-red-700 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
               <input
                 type="email"
                 placeholder="Email"
-                className="mb-4 w-full p-3 rounded-md bg-white"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="mb-4 w-full p-3 rounded-md bg-white text-black placeholder-gray-500"
               />
               <input
                 type="password"
                 placeholder="Password"
-                className="mb-6 w-full p-3 rounded-md bg-white"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mb-6 w-full p-3 rounded-md bg-white text-black placeholder-gray-500"
               />
               <button
                 className="bg-[#2C2C2C] text-white font-bold py-3 px-6 rounded-md shadow-md mb-4 w-full"
-                onClick={() => {
-                  localStorage.setItem('authToken', 'sampleToken');
-                  window.location.href = '/loading';
-                }}
+                onClick={handleLogin}
+                disabled={loading}
               >
-                Login
+                {loading ? 'Logging in...' : 'Login'}
               </button>
               <p className="text-blue-500 text-sm mb-6 text-center underline cursor-pointer">
                 Forgot password?
@@ -82,4 +146,4 @@ const Home: React.FC = () => {
   );
 };
 
-export default Home;
+export default Login;

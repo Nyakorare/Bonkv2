@@ -63,7 +63,7 @@ const Withdraw: React.FC = () => {
               <div className="space-y-6">
                 <div className="relative">
                   <select
-                    className="w-full p-3 rounded-md bg-gray-100 text-gray-700 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full p-3 rounded-md bg-gray-100 text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
                   >
                     <option value="" disabled selected>
                       Select Bank
@@ -80,7 +80,7 @@ const Withdraw: React.FC = () => {
                   <input
                     type="number"
                     placeholder="Enter amount to withdraw"
-                    className="w-full p-3 rounded-md bg-gray-100 text-gray-700 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full p-3 rounded-md bg-gray-100 text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                 </div>
               </div>
@@ -93,7 +93,7 @@ const Withdraw: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Add notes (optional)"
-                  className="w-full p-3 pl-10 h-20 rounded-md bg-gray-100 text-gray-700 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full p-3 pl-10 h-20 rounded-md bg-gray-100 text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
             </div>

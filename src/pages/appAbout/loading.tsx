@@ -1,17 +1,44 @@
 import { IonContent, IonPage } from '@ionic/react';
 import { useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
+import { supabase } from '../../supabaseClient';
 
 const Loading: React.FC = () => {
   const history = useHistory();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const authToken = localStorage.getItem('authToken');
-      // Use history.push instead of window.location for smoother navigation
-      history.push(authToken ? '/dashboard' : '/login');
-    }, 3000);
-    return () => clearTimeout(timer);
+    const checkAuth = async () => {
+      try {
+        // Check for existing session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
+        
+        if (session) {
+          // Check if user has an active account
+          const { data: accountData, error: accountError } = await supabase
+            .from('accounts')
+            .select('status')
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (accountError || !accountData || accountData.status !== 'active') {
+            throw new Error('Account not active');
+          }
+
+          // Store the access token
+          localStorage.setItem('authToken', session.access_token);
+          history.push('/dashboard');
+        } else {
+          history.push('/login');
+        }
+      } catch (err) {
+        console.error('Auth check failed:', err);
+        history.push('/login');
+      }
+    };
+
+    checkAuth();
   }, [history]);
 
   return (
@@ -40,7 +67,7 @@ const Loading: React.FC = () => {
             <img 
               src="/bonk.png" 
               alt="Bonk Logo" 
-              className="w-48 h-48 mb-6 animate-pulse" // Changed to pulse for better loading indication
+              className="w-48 h-48 mb-6 animate-pulse"
             />
             <div className="loader border-t-4 border-b-4 border-white rounded-full w-12 h-12 animate-spin"></div>
           </div>

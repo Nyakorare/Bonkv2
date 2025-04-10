@@ -5,7 +5,6 @@ import Home from './pages/Home';
 import AppAbout from './pages/appAbout/info'; // Import the info component
 import Login from './pages/userAuth/login'; // Import the Login component
 import Register from './pages/userAuth/register'; // Import the Register component
-import OtpPage from './pages/userAuth/otp'; // Import the OTP page
 import Dashboard from './pages/userDashboard/dashboard'; // Import the Dashboard component
 import Loading from './pages/appAbout/loading'; // Import the Loading component
 import Deposit from './pages/userDashboard/deposit'; // Import the Deposit component
@@ -56,9 +55,6 @@ const App: React.FC = () => (
         </Route>
         <Route exact path="/register">
           <Register />
-        </Route>
-        <Route exact path="/otp">
-          <OtpPage />
         </Route>
         <Route exact path="/settings">
           <Settings />

@@ -1,36 +1,119 @@
 import { IonContent, IonPage, IonModal, IonAvatar } from '@ionic/react';
 import { FaArrowLeft, FaUser, FaLock, FaCamera } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 
 const Settings: React.FC = () => {
   const history = useHistory();
-  const [username, setUsername] = useState('john_doe');
+  const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [profileImage, setProfileImage] = useState('/default-profile.png');
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSaveChanges = () => {
-    // Add validation and save logic here
-    alert('Changes saved successfully!');
-    history.goBack();
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('No user found');
+
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('username, full_name, avatar_url')
+          .eq('id', user.id)
+          .single();
+
+        if (error) throw error;
+
+        if (profile) {
+          setUsername(profile.username);
+          setFullName(profile.full_name);
+          setProfileImage(profile.avatar_url || '/default-profile.png');
+        }
+      } catch (err) {
+        console.error('Error fetching profile:', err);
+        setError('Failed to load profile data');
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  const handleSaveChanges = async () => {
+    try {
+      setError('');
+      setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user found');
+
+      // Update profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          username,
+          full_name: fullName,
+          avatar_url: profileImage
+        })
+        .eq('id', user.id);
+
+      if (profileError) throw profileError;
+
+      // Update password if provided
+      if (currentPassword && newPassword && confirmPassword) {
+        if (newPassword !== confirmPassword) {
+          throw new Error('New passwords do not match');
+        }
+
+        const { error: passwordError } = await supabase.auth.updateUser({
+          password: newPassword
+        });
+
+        if (passwordError) throw passwordError;
+      }
+
+      history.goBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save changes');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setProfileImage(event.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user found');
+
+      // Upload image to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      setProfileImage(publicUrl);
+      setShowImagePicker(false);
+    } catch (err) {
+      console.error('Error uploading image:', err);
+      setError('Failed to upload image');
     }
-    setShowImagePicker(false);
   };
 
   return (
@@ -55,6 +138,12 @@ const Settings: React.FC = () => {
 
         {/* Main content area - scrollable */}
         <div className="flex flex-col bg-[#5EC95F] px-4 w-full min-h-[calc(100%-64px)] pb-4">
+          {error && (
+            <div className="mb-4 p-2 bg-red-100 text-red-700 rounded-md text-sm">
+              {error}
+            </div>
+          )}
+
           {/* Profile Image Section */}
           <div className="flex flex-col items-center mb-6">
             <div className="relative">
@@ -81,7 +170,21 @@ const Settings: React.FC = () => {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                />
+              </div>
+            </div>
+
+            {/* Full Name Field */}
+            <div className="space-y-2">
+              <label className="text-gray-800 font-medium">Full Name</label>
+              <div className="relative">
+                <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
                 />
               </div>
             </div>
@@ -95,7 +198,7 @@ const Settings: React.FC = () => {
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
                   placeholder="Enter current password"
                 />
               </div>
@@ -110,7 +213,7 @@ const Settings: React.FC = () => {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
                   placeholder="Enter new password"
                 />
               </div>
@@ -125,7 +228,7 @@ const Settings: React.FC = () => {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
                   placeholder="Confirm new password"
                 />
               </div>
@@ -136,8 +239,9 @@ const Settings: React.FC = () => {
           <button
             className="w-full bg-[#4AB54B] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3A9B3A] transition-colors"
             onClick={handleSaveChanges}
+            disabled={loading}
           >
-            Save Changes
+            {loading ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
 
