@@ -5,6 +5,10 @@ import { useHistory } from 'react-router-dom';
 
 const TransactionHistory: React.FC = () => {
     const history = useHistory();
+    const [selectedFilter, setSelectedFilter] = useState('all');
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
     const transactions = Array.from({ length: 10 }).map((_, i) => ({
@@ -14,6 +18,13 @@ const TransactionHistory: React.FC = () => {
         date: `2023-10-${i + 1}`,
         details: `Details for Transaction ${i + 1}`
     }));
+
+    const filters = [
+        { id: 'all', label: 'All' },
+        { id: 'deposit', label: 'Deposits' },
+        { id: 'withdraw', label: 'Withdrawals' },
+        { id: 'transfer', label: 'Transfers' }
+    ];
 
     const toggleExpand = (index: number) => {
         setExpandedIndex(expandedIndex === index ? null : index);
@@ -39,29 +50,46 @@ const TransactionHistory: React.FC = () => {
                     </div>
 
                     {/* Title and Filters Container */}
-                    <div className="bg-[#5EC95F] p-4">
-                        {/* Title */}
-                        <div className="text-center text-xl font-bold text-white">
-                            Transaction History
+                    <div className="bg-white p-4">
+                        <h1 className="text-2xl font-bold text-gray-800 mb-4">Transaction History</h1>
+                        
+                        {/* Filter Buttons */}
+                        <div className="flex space-x-2 mb-4 overflow-x-auto pb-2">
+                            {filters.map((filter) => (
+                                <button
+                                    key={filter.id}
+                                    onClick={() => setSelectedFilter(filter.id)}
+                                    className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+                                        selectedFilter === filter.id
+                                            ? 'bg-[#5EC95F] text-white'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    {filter.label}
+                                </button>
+                            ))}
                         </div>
 
-                        {/* Filters */}
-                        <div className="flex justify-center mt-2 space-x-4">
-                            {/* Date Filter */}
-                            <input 
-                                type="date" 
-                                className="border border-gray-200 rounded-md p-2 text-sm text-black"
-                                onChange={(e) => console.log('Selected date:', e.target.value)} 
-                            />
-                            {/* Transaction Type Filter */}
-                            <select 
-                                className="border border-gray-200 rounded-md p-2 text-sm text-black"
-                                onChange={(e) => console.log('Selected type:', e.target.value)}
-                            >
-                                <option value="">All Types</option>
-                                <option value="income">Income</option>
-                                <option value="expense">Expense</option>
-                            </select>
+                        {/* Date Filter */}
+                        <div className="flex space-x-2 mb-4">
+                            <div className="flex-1">
+                                <input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="w-full p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                    placeholder="Start Date"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    className="w-full p-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                    placeholder="End Date"
+                                />
+                            </div>
                         </div>
                     </div>
 

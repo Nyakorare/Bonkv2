@@ -3,13 +3,43 @@ import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, F
 import { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom'; // Import useHistory
 import bonkLogo from '/bonk.png';
+import { supabase } from '../../supabaseClient';
 
 const Dashboard: React.FC = () => {
     const history = useHistory(); // Initialize useHistory
     const [showLogoutAlert, setShowLogoutAlert] = useState(false);
     const [currentAdIndex, setCurrentAdIndex] = useState(0);
     const [fade, setFade] = useState(true);
+    const [firstName, setFirstName] = useState('');
+    const [profileImage, setProfileImage] = useState('/default-profile.png');
     const adImages = ['/ad1.png', '/ad2.png', '/ad3.png']; // Removed leading slash
+
+    useEffect(() => {
+        const fetchUserProfile = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('No user found');
+
+                const { data: profile, error } = await supabase
+                    .from('profiles')
+                    .select('full_name, avatar_url')
+                    .eq('id', user.id)
+                    .single();
+
+                if (error) throw error;
+
+                if (profile) {
+                    const nameParts = profile.full_name.split(' ');
+                    setFirstName(nameParts[0]);
+                    setProfileImage(profile.avatar_url || '/default-profile.png');
+                }
+            } catch (err) {
+                console.error('Error fetching profile:', err);
+            }
+        };
+
+        fetchUserProfile();
+    }, []);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -57,9 +87,9 @@ const Dashboard: React.FC = () => {
                             <div className="w-full max-w-md flex items-center space-x-4">
                                 <div className="h-16 w-16 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
                                     <img 
-                                        src="/profile-icon.png" 
+                                        src={profileImage} 
                                         alt="Profile" 
-                                        className="h-full w-full object-cover"
+                                        className="w-full h-full object-cover"
                                         onError={(e) => {
                                             e.currentTarget.src = '/default-profile.png';
                                         }}
@@ -68,7 +98,7 @@ const Dashboard: React.FC = () => {
                                 <span className="text-2xl font-bold">
                                     <span className="text-black">Welcome, </span>
                                     <span className="text-white" style={{ WebkitTextStroke: '1px black' }}>
-                                        Glenn
+                                        {firstName}
                                     </span>
                                 </span>
                                 <FaCog className="text-3xl text-black cursor-pointer ml-auto" onClick={() => history.push('/settings')} />

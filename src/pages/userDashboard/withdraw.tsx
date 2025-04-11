@@ -1,13 +1,42 @@
 import { IonContent, IonPage, IonModal } from '@ionic/react';
-import { FaArrowLeft, FaWallet, FaMoneyBillWave, FaQrcode, FaStickyNote } from 'react-icons/fa';
-import { useState } from 'react';
+import { FaArrowLeft, FaWallet, FaMoneyBillWave, FaQrcode, FaStickyNote, FaCopy, FaUniversity, FaStore } from 'react-icons/fa';
+import { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
+import { supabase } from '../../supabaseClient';
 
 const Withdraw: React.FC = () => {
   const history = useHistory();
-  const [showModal, setShowModal] = useState(false); // State for modal visibility
-  const generatedAccountNumber = '1234567890'; // Example generated account number
-  const availableBalance = '₱0.00'; // Updated available balance
+  const [showModal, setShowModal] = useState(false);
+  const [accountNumber, setAccountNumber] = useState('');
+  const [loading, setLoading] = useState(true);
+  const availableBalance = '₱0.00';
+
+  useEffect(() => {
+    const fetchAccountNumber = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('No user found');
+
+        const { data: account, error } = await supabase
+          .from('accounts')
+          .select('account_number')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error) throw error;
+
+        if (account) {
+          setAccountNumber(account.account_number);
+        }
+      } catch (err) {
+        console.error('Error fetching account number:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAccountNumber();
+  }, []);
 
   return (
     <IonPage style={{ height: '100%', width: '100%' }}>
@@ -30,115 +59,69 @@ const Withdraw: React.FC = () => {
         </div>
 
         {/* Main content area - scrollable */}
-        <div className="flex flex-col bg-[#5EC95F] px-4 w-full min-h-[calc(100%-64px)] pb-4 overflow-y-auto">
-          {/* Available Balance Container */}
+        <div className="flex flex-col bg-[#5EC95F] px-4 w-full min-h-[calc(100%-64px)] pb-4">
+          {/* Account Balance Container */}
           <div className="bg-white rounded-lg shadow-lg p-4 w-full mb-4">
-            <div className="w-full p-3 rounded-md bg-gray-100 text-gray-700 text-center font-bold text-lg">
+            <div className="text-gray-800 text-lg font-bold text-center">
               Available Balance:
             </div>
-            <div className="w-full p-3 rounded-md bg-gray-100 text-gray-700 text-center font-bold text-xl">
+            <div className="text-gray-700 text-xl font-bold text-center mt-1">
               {availableBalance}
             </div>
           </div>
 
           {/* White Container */}
           <div className="bg-white rounded-lg shadow-lg p-6 w-full mb-4 space-y-6">
-            {/* Account Number Display */}
+            {/* Input Fields */}
             <div className="space-y-6">
               {/* Account Number Label */}
-              <div className="text-center font-bold text-gray-700">
+              <div className="text-center text-gray-800 font-bold">
                 Account Number
               </div>
-              <div className="relative">
+              {/* Account Number */}
+              <div className="relative flex justify-center">
                 <FaWallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                <div className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-700 text-center">
-                  {generatedAccountNumber}
-                </div>
-              </div>
-            </div>
-
-            {/* Withdrawal Input */}
-            <div className="space-y-6">
-              {/* Bank Selection Dropdown */}
-              <div className="space-y-6">
-                <div className="relative">
-                  <select
-                    className="w-full p-3 rounded-md bg-gray-100 text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
-                  >
-                    <option value="" disabled selected>
-                      Select Bank
-                    </option>
-                    <option value="bank1">Bank 1</option>
-                    <option value="bank2">Bank 2</option>
-                    <option value="bank3">Bank 3</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="relative">
-                  <input
-                    type="number"
-                    placeholder="Enter amount to withdraw"
-                    className="w-full p-3 rounded-md bg-gray-100 text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Notes Input */}
-            <div className="space-y-6">
-              <div className="relative">
-                <FaStickyNote className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="Add notes (optional)"
-                  className="w-full p-3 pl-10 h-20 rounded-md bg-gray-100 text-black border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  value={loading ? 'Loading...' : accountNumber}
+                  readOnly
+                  className="w-full max-w-md p-3 pl-10 rounded-md bg-[#2C2C2C] text-white focus:outline-none text-center"
                 />
+                <button
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  onClick={() => {
+                    if (accountNumber) {
+                      navigator.clipboard.writeText(accountNumber);
+                    }
+                  }}
+                >
+                  <FaCopy className="text-lg" />
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Buttons */}
-          <div className="space-y-4">
-            <button
-              className="w-full bg-[#4CAF50] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#45A049] transition-colors flex items-center justify-center space-x-2"
-              onClick={() => alert('Withdrawal initiated!')}
-            >
-              <FaMoneyBillWave className="text-xl" />
-              <span>Withdraw Now</span>
-            </button>
-            <button
-              className="w-full bg-[#2C2C2C] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3C3C3C] transition-colors flex items-center justify-center space-x-2"
-              onClick={() => setShowModal(true)} // Show modal on click
-            >
-              <FaQrcode className="text-xl" />
-              <span>Withdraw via QR</span>
-            </button>
+          {/* Withdraw Options Section */}
+          <div className="bg-white rounded-lg shadow-lg p-4 w-full">
+            <h2 className="text-gray-800 font-bold mb-2">Withdraw Options</h2>
+            <div className="space-y-4">
+              <button
+                className="w-full bg-[#4AB54B] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3A9B3A] transition-colors flex items-center justify-center space-x-2"
+                onClick={() => alert('Bank Transfer selected')}
+              >
+                <FaUniversity className="text-white" />
+                <span>Bank Transfer</span>
+              </button>
+              <button
+                className="w-full bg-[#4AB54B] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3A9B3A] transition-colors flex items-center justify-center space-x-2"
+                onClick={() => alert('Over the Counter selected')}
+              >
+                <FaStore className="text-white" />
+                <span>Over the Counter</span>
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* QR Code Modal */}
-        <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
-          <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 bg-white">
-            {/* QR Code Icon */}
-            <FaQrcode className="text-6xl text-gray-500" />
-            {/* Generate QR Code Button */}
-            <button
-              className="w-full bg-green-500 text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-green-600 transition-colors"
-              onClick={() => alert('QR Code generated!')}
-            >
-              Generate QR Code
-            </button>
-            {/* Close Button */}
-            <button
-              className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-red-600 transition-colors"
-              onClick={() => setShowModal(false)}
-            >
-              Close
-            </button>
-          </div>
-        </IonModal>
       </IonContent>
     </IonPage>
   );

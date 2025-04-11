@@ -1,12 +1,41 @@
 import { IonContent, IonPage, IonModal } from '@ionic/react';
-import { FaArrowLeft, FaWallet, FaQrcode, FaUniversity, FaCreditCard, FaStore } from 'react-icons/fa';
+import { FaArrowLeft, FaWallet, FaQrcode, FaUniversity, FaCreditCard, FaStore, FaCopy } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../supabaseClient';
 
 const Deposit: React.FC = () => {
   const history = useHistory();
-  const [accountNumber] = useState('1234567890'); // Default account number
-  const [showQRModal, setShowQRModal] = useState(false); // State for QR modal
+  const [accountNumber, setAccountNumber] = useState('');
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAccountNumber = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('No user found');
+
+        const { data: account, error } = await supabase
+          .from('accounts')
+          .select('account_number')
+          .eq('user_id', user.id)
+          .single();
+
+        if (error) throw error;
+
+        if (account) {
+          setAccountNumber(account.account_number);
+        }
+      } catch (err) {
+        console.error('Error fetching account number:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAccountNumber();
+  }, []);
 
   return (
     <IonPage style={{ height: '100%', width: '100%' }}>
@@ -53,10 +82,20 @@ const Deposit: React.FC = () => {
                 <FaWallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
-                  value={accountNumber}
+                  value={loading ? 'Loading...' : accountNumber}
                   readOnly
                   className="w-full max-w-md p-3 pl-10 rounded-md bg-[#2C2C2C] text-white focus:outline-none text-center"
                 />
+                <button
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  onClick={() => {
+                    if (accountNumber) {
+                      navigator.clipboard.writeText(accountNumber);
+                    }
+                  }}
+                >
+                  <FaCopy className="text-lg" />
+                </button>
               </div>
             </div>
           </div>
@@ -107,16 +146,16 @@ const Deposit: React.FC = () => {
         {/* QR Modal */}
         <IonModal isOpen={showQRModal} onDidDismiss={() => setShowQRModal(false)}>
           <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
-            <FaQrcode className="text-9xl text-gray-500" />
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Scan QR Code</h2>
+            <div className="bg-white p-4 rounded-lg shadow-lg">
+              {/* You can add a QR code component here */}
+              <div className="w-64 h-64 bg-gray-200 flex items-center justify-center">
+                <span className="text-gray-500">QR Code Placeholder</span>
+              </div>
+            </div>
             <button
-              className="w-full bg-[#4AB54B] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3A9B3A] transition-colors"
-              onClick={() => alert('QR Code generated!')}
-            >
-              Generate QR Code
-            </button>
-            <button
-              className="w-full bg-gray-300 text-gray-800 font-bold py-3 px-6 rounded-md shadow-md hover:bg-gray-400 transition-colors"
-              onClick={() => setShowQRModal(false)} // Close modal
+              className="mt-6 bg-[#5EC95F] text-white font-bold py-2 px-6 rounded-md"
+              onClick={() => setShowQRModal(false)}
             >
               Close
             </button>

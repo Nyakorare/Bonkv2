@@ -45,6 +45,55 @@ const Settings: React.FC = () => {
     fetchProfile();
   }, []);
 
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user found');
+
+      // Generate a unique filename with user's folder
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      // Upload image to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // Update profile with new avatar URL
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Update error:', updateError);
+        throw updateError;
+      }
+
+      setProfileImage(publicUrl);
+      setShowImagePicker(false);
+    } catch (err) {
+      console.error('Error uploading image:', err);
+      setError('Failed to upload image. Please try again.');
+    }
+  };
+
   const handleSaveChanges = async () => {
     try {
       setError('');
@@ -86,36 +135,6 @@ const Settings: React.FC = () => {
     }
   };
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    try {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      // Upload image to Supabase Storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
-
-      setProfileImage(publicUrl);
-      setShowImagePicker(false);
-    } catch (err) {
-      console.error('Error uploading image:', err);
-      setError('Failed to upload image');
-    }
-  };
-
   return (
     <IonPage style={{ height: '100%', width: '100%' }}>
       <IonContent
@@ -147,9 +166,16 @@ const Settings: React.FC = () => {
           {/* Profile Image Section */}
           <div className="flex flex-col items-center mb-6">
             <div className="relative">
-              <IonAvatar className="w-24 h-24">
-                <img src={profileImage} alt="Profile" className="object-cover" />
-              </IonAvatar>
+              <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
+                <img 
+                  src={profileImage} 
+                  alt="Profile" 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = '/default-profile.png';
+                  }}
+                />
+              </div>
               <button
                 className="absolute bottom-0 right-0 bg-[#2C2C2C] rounded-full p-2"
                 onClick={() => setShowImagePicker(true)}
@@ -160,17 +186,17 @@ const Settings: React.FC = () => {
           </div>
 
           {/* White Container */}
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full mb-4 space-y-6">
-            {/* Username Field */}
+          <div className="bg-white rounded-lg p-6 space-y-6">
+            {/* Email Field */}
             <div className="space-y-2">
-              <label className="text-gray-800 font-medium">Username</label>
+              <label className="text-gray-800 font-medium">Email</label>
               <div className="relative">
                 <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                  readOnly
+                  className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-600 cursor-not-allowed"
                 />
               </div>
             </div>
@@ -183,8 +209,8 @@ const Settings: React.FC = () => {
                 <input
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                  readOnly
+                  className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-600 cursor-not-allowed"
                 />
               </div>
             </div>
@@ -237,7 +263,7 @@ const Settings: React.FC = () => {
 
           {/* Save Button */}
           <button
-            className="w-full bg-[#4AB54B] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3A9B3A] transition-colors"
+            className="w-full bg-[#4AB54B] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3A9B3A] transition-colors mt-6"
             onClick={handleSaveChanges}
             disabled={loading}
           >
