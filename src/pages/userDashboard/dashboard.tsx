@@ -5,6 +5,16 @@ import { useHistory } from 'react-router-dom'; // Import useHistory
 import bonkLogo from '/bonk.png';
 import { supabase } from '../../supabaseClient';
 
+interface Transaction {
+  id: string;
+  amount: number;
+  type: 'deposit' | 'withdrawal';
+  description: string;
+  status: 'completed' | 'pending' | 'failed';
+  created_at: string;
+  reference_number: string;
+}
+
 const Dashboard: React.FC = () => {
     const history = useHistory(); // Initialize useHistory
     const [showLogoutAlert, setShowLogoutAlert] = useState(false);
@@ -12,33 +22,63 @@ const Dashboard: React.FC = () => {
     const [fade, setFade] = useState(true);
     const [firstName, setFirstName] = useState('');
     const [profileImage, setProfileImage] = useState('/default-profile.png');
+    const [balance, setBalance] = useState(0);
     const adImages = ['/ad1.png', '/ad2.png', '/ad3.png']; // Removed leading slash
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
 
     useEffect(() => {
-        const fetchUserProfile = async () => {
+        const fetchUserData = async () => {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error('No user found');
 
-                const { data: profile, error } = await supabase
+                // Fetch profile data
+                const { data: profile, error: profileError } = await supabase
                     .from('profiles')
                     .select('full_name, avatar_url')
                     .eq('id', user.id)
                     .single();
 
-                if (error) throw error;
+                if (profileError) throw profileError;
 
                 if (profile) {
                     const nameParts = profile.full_name.split(' ');
                     setFirstName(nameParts[0]);
                     setProfileImage(profile.avatar_url || '/default-profile.png');
                 }
+
+                // Fetch account balance
+                const { data: account, error: accountError } = await supabase
+                    .from('accounts')
+                    .select('id, balance')
+                    .eq('user_id', user.id)
+                    .single();
+
+                if (accountError) throw accountError;
+
+                if (account) {
+                    setBalance(account.balance || 0);
+                }
+
+                // Fetch recent transactions
+                const { data: transactionsData, error: transactionsError } = await supabase
+                    .from('transactions')
+                    .select('*')
+                    .eq('account_id', account.id)
+                    .order('created_at', { ascending: false })
+                    .limit(3);
+
+                if (transactionsError) throw transactionsError;
+
+                if (transactionsData) {
+                    setTransactions(transactionsData);
+                }
             } catch (err) {
-                console.error('Error fetching profile:', err);
+                console.error('Error fetching user data:', err);
             }
         };
 
-        fetchUserProfile();
+        fetchUserData();
     }, []);
 
     useEffect(() => {
@@ -117,11 +157,11 @@ const Dashboard: React.FC = () => {
                             <div className="mt-4 w-full max-w-md p-4 bg-white rounded-lg shadow-md flex items-center">
                                 <div className="flex-1">
                                     <span className="text-lg text-gray-600">Account Balance</span>
-                                    <div className="text-2xl font-bold text-black">₱ 0.00</div>
+                                    <div className="text-2xl font-bold text-black">₱ {balance.toFixed(2)}</div>
                                 </div>
                                 <button 
                                     className="h-12 w-12 bg-[#5EC95F] text-white rounded-full flex items-center justify-center shadow-md text-2xl"
-                                    onClick={() => history.push('/deposit')} // Navigate to deposit page
+                                    onClick={() => history.push('/deposit')}
                                 >
                                     +
                                 </button>
@@ -172,24 +212,35 @@ const Dashboard: React.FC = () => {
                             <h3 className="font-bold text-black text-lg">Recent Transactions</h3>
                             <button 
                                 className="text-blue-500 text-md font-medium"
-                                onClick={() => history.push('/transactions')} // Navigate to transactions page
+                                onClick={() => history.push('/transactions')}
                             >
                                 See More
                             </button>
                         </div>
-                        <div className="space-y-2 h-3/4 overflow-y-auto">
-                            {Array.from({ length: 3 }).map((_, i) => {
-                                const amount = (i + 1) * 100 * (i % 2 === 0 ? 1 : -1); // Alternate positive and negative amounts
-                                return (
-                                    <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                                        <span className="text-md text-gray-600">Transaction {i + 1}</span>
-                                        <span className={`text-md font-bold ${amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                            ₱ {Math.abs(amount).toFixed(2)}
-                                        </span>
+                        {transactions.length === 0 ? (
+                            <div className="text-center py-4">
+                                <p className="text-gray-500">No recent transactions</p>
+                            </div>
+                        ) : (
+                            transactions.map((transaction) => (
+                                <div key={transaction.id} className="flex justify-between items-center p-3 bg-gray-50 rounded mb-2">
+                                    <div>
+                                        <span className="text-md text-gray-600">{transaction.description}</span>
+                                        <div className="text-xs text-gray-400">
+                                            {new Date(transaction.created_at).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric'
+                                            })}
+                                        </div>
                                     </div>
-                                );
-                            })}
-                        </div>
+                                    <span className={`text-md font-bold ${
+                                        transaction.type === 'deposit' ? 'text-green-500' : 'text-red-500'
+                                    }`}>
+                                        ₱ {Math.abs(transaction.amount).toFixed(2)}
+                                    </span>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
 

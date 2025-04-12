@@ -85,6 +85,37 @@ const Register: React.FC = () => {
         return;
       }
 
+      // Generate a random account number
+      const accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+
+      // Create account with starting balance
+      const { data: accountData, error: accountError } = await supabase
+        .from('accounts')
+        .insert({
+          user_id: data.user.id,
+          account_number: accountNumber,
+          balance: 50,
+          status: 'active'
+        })
+        .select()
+        .single();
+
+      if (accountError) throw accountError;
+
+      // Create initial transaction
+      const { error: transactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: accountData.id,
+          amount: 50,
+          type: 'deposit',
+          description: 'Initial deposit',
+          status: 'completed',
+          reference_number: `INIT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+        });
+
+      if (transactionError) throw transactionError;
+
       // Sign in the user immediately after registration
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: formData.email,

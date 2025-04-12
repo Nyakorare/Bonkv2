@@ -9,33 +9,34 @@ const Withdraw: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [accountNumber, setAccountNumber] = useState('');
   const [loading, setLoading] = useState(true);
-  const availableBalance = '₱0.00';
+  const [balance, setBalance] = useState(0);
 
   useEffect(() => {
-    const fetchAccountNumber = async () => {
+    const fetchUserData = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('No user found');
 
-        const { data: account, error } = await supabase
+        const { data: account, error: accountError } = await supabase
           .from('accounts')
-          .select('account_number')
+          .select('account_number, balance')
           .eq('user_id', user.id)
           .single();
 
-        if (error) throw error;
+        if (accountError) throw accountError;
 
         if (account) {
           setAccountNumber(account.account_number);
+          setBalance(account.balance || 0);
         }
       } catch (err) {
-        console.error('Error fetching account number:', err);
+        console.error('Error fetching user data:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchAccountNumber();
+    fetchUserData();
   }, []);
 
   return (
@@ -66,7 +67,7 @@ const Withdraw: React.FC = () => {
               Available Balance:
             </div>
             <div className="text-gray-700 text-xl font-bold text-center mt-1">
-              {availableBalance}
+              ₱{balance.toFixed(2)}
             </div>
           </div>
 
