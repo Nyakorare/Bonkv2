@@ -26,19 +26,25 @@ const Loading: React.FC = () => {
             throw new Error('Account not active');
           }
 
-          // Store the access token
+          // Store the access token and redirect to dashboard
           localStorage.setItem('authToken', session.access_token);
-          history.push('/dashboard');
+          history.replace('/dashboard'); // Use replace instead of push to prevent going back
         } else {
-          history.push('/login');
+          // Clear any existing auth token
+          localStorage.removeItem('authToken');
+          history.replace('/login'); // Use replace instead of push to prevent going back
         }
       } catch (err) {
         console.error('Auth check failed:', err);
-        history.push('/login');
+        // Clear any existing auth token on error
+        localStorage.removeItem('authToken');
+        history.replace('/login'); // Use replace instead of push to prevent going back
       }
     };
 
-    checkAuth();
+    // Add a small delay to show the loading screen
+    const timer = setTimeout(checkAuth, 1000);
+    return () => clearTimeout(timer);
   }, [history]);
 
   return (

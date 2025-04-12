@@ -1,7 +1,7 @@
 import { IonContent, IonPage } from '@ionic/react';
 import { FaFingerprint, FaInfoCircle } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
 const Login: React.FC = () => {
@@ -10,6 +10,38 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
+        
+        if (session) {
+          // Check if user has an active account
+          const { data: accountData, error: accountError } = await supabase
+            .from('accounts')
+            .select('status')
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (accountError || !accountData || accountData.status !== 'active') {
+            throw new Error('Account not active');
+          }
+
+          // If user is already logged in, redirect to dashboard
+          history.push('/dashboard');
+        }
+      } catch (err) {
+        console.error('Session check failed:', err);
+        // Clear any existing auth token on error
+        localStorage.removeItem('authToken');
+      }
+    };
+
+    checkSession();
+  }, [history]);
 
   const handleLogin = async () => {
     try {
@@ -53,7 +85,7 @@ const Login: React.FC = () => {
 
       // Store user session and redirect
       localStorage.setItem('authToken', data.session?.access_token || '');
-      history.push('/dashboard');
+      history.push('/loading');
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');

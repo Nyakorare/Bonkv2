@@ -53,9 +53,18 @@ const Dashboard: React.FC = () => {
     }, []);
 
     const handleLogout = () => setShowLogoutAlert(true);
-    const confirmLogout = () => {
-        localStorage.removeItem('authToken');
-        window.location.href = '/login';
+    const confirmLogout = async () => {
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
+            
+            localStorage.removeItem('authToken');
+            history.push('/loading');
+        } catch (err) {
+            console.error('Error signing out:', err);
+            // Fallback to direct navigation if there's an error
+            window.location.href = '/login';
+        }
     };
 
     return (
