@@ -7,11 +7,11 @@ import { supabase } from '../../supabaseClient';
 interface Transaction {
   id: string;
   amount: number;
-  type: 'deposit' | 'withdrawal';
+  transaction_type: 'deposit' | 'withdrawal' | 'transfer';
   description: string;
   status: 'completed' | 'pending' | 'failed';
   created_at: string;
-  reference_number: string;
+  reference_id: string;
 }
 
 const TransactionHistory: React.FC = () => {
@@ -41,7 +41,7 @@ const TransactionHistory: React.FC = () => {
       const { data: account, error: accountError } = await supabase
         .from('accounts')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('email', user.email)
         .single();
 
       if (accountError) throw accountError;
@@ -55,7 +55,7 @@ const TransactionHistory: React.FC = () => {
 
       // Apply type filter
       if (selectedFilter !== 'all') {
-        query = query.eq('type', selectedFilter);
+        query = query.eq('transaction_type', selectedFilter);
       }
 
       // Apply date range filter
@@ -194,7 +194,7 @@ const TransactionHistory: React.FC = () => {
                     <div className="flex items-center">
                       <span 
                         className={`text-md font-bold ${
-                          transaction.type === 'deposit' ? 'text-green-500' : 'text-red-500'
+                          transaction.transaction_type === 'deposit' ? 'text-green-500' : transaction.transaction_type === 'withdrawal' ? 'text-red-500' : 'text-blue-500'
                         }`}
                       >
                         ₱ {Math.abs(transaction.amount).toFixed(2)}
@@ -209,8 +209,8 @@ const TransactionHistory: React.FC = () => {
                   {expandedIndex === index && (
                     <div className="mt-2 text-sm text-gray-600">
                       <p>Status: {transaction.status}</p>
-                      <p>Type: {transaction.type}</p>
-                      <p>Reference: {transaction.reference_number}</p>
+                      <p>Type: {transaction.transaction_type}</p>
+                      <p>Reference: {transaction.reference_id}</p>
                     </div>
                   )}
                 </div>

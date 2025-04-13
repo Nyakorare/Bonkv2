@@ -19,15 +19,15 @@ const Login: React.FC = () => {
         if (error) throw error;
         
         if (session) {
-          // Check if user has an active account
+          // Check if user has an account
           const { data: accountData, error: accountError } = await supabase
             .from('accounts')
-            .select('status')
-            .eq('user_id', session.user.id)
+            .select('id')
+            .eq('email', session.user.email)
             .single();
 
-          if (accountError || !accountData || accountData.status !== 'active') {
-            throw new Error('Account not active');
+          if (accountError || !accountData) {
+            throw new Error('Account not found');
           }
 
           // If user is already logged in, redirect to dashboard
@@ -68,19 +68,19 @@ const Login: React.FC = () => {
         throw new Error('No user data returned');
       }
 
-      // Check if user has an active account
+      // Check if user has an account
       const { data: accountData, error: accountError } = await supabase
         .from('accounts')
-        .select('status')
-        .eq('user_id', data.user.id)
+        .select('id')
+        .eq('email', email)
         .single();
 
       if (accountError) {
         throw accountError;
       }
 
-      if (!accountData || accountData.status !== 'active') {
-        throw new Error('Account is not active. Please contact support.');
+      if (!accountData) {
+        throw new Error('Account not found. Please register first.');
       }
 
       // Store user session and redirect

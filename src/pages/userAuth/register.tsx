@@ -88,30 +88,52 @@ const Register: React.FC = () => {
       // Generate a random account number
       const accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
 
-      // Create account with starting balance
+      // Create account
       const { data: accountData, error: accountError } = await supabase
         .from('accounts')
         .insert({
-          user_id: data.user.id,
-          account_number: accountNumber,
-          balance: 50,
-          status: 'active'
+          email: formData.email,
+          password_hash: formData.password, // Note: In production, this should be hashed
+          account_number: accountNumber
         })
         .select()
         .single();
 
       if (accountError) throw accountError;
 
+      // Create profile with default avatar
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          account_id: accountData.id,
+          first_name: formData.fullName.split(' ')[0],
+          last_name: formData.fullName.split(' ').slice(1).join(' '),
+          avatar_url: '/default-profile.png'
+        });
+
+      if (profileError) throw profileError;
+
+      // Create initial balance
+      const { error: balanceError } = await supabase
+        .from('balances')
+        .insert({
+          account_id: accountData.id,
+          available_balance: 50.00,
+          total_balance: 50.00
+        });
+
+      if (balanceError) throw balanceError;
+
       // Create initial transaction
       const { error: transactionError } = await supabase
         .from('transactions')
         .insert({
           account_id: accountData.id,
-          amount: 50,
-          type: 'deposit',
+          amount: 50.00,
+          transaction_type: 'deposit',
           description: 'Initial deposit',
           status: 'completed',
-          reference_number: `INIT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+          reference_id: `INIT-${Date.now()}`
         });
 
       if (transactionError) throw transactionError;

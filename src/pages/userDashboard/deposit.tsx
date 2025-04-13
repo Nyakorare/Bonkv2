@@ -17,18 +17,30 @@ const Deposit: React.FC = () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('No user found');
 
-        // Fetch account number
+        // Fetch account data
         const { data: account, error: accountError } = await supabase
           .from('accounts')
-          .select('account_number, balance')
-          .eq('user_id', user.id)
+          .select('id, account_number')
+          .eq('email', user.email)
           .single();
 
         if (accountError) throw accountError;
 
         if (account) {
           setAccountNumber(account.account_number);
-          setBalance(account.balance || 0);
+        }
+
+        // Fetch balance
+        const { data: balanceData, error: balanceError } = await supabase
+          .from('balances')
+          .select('available_balance')
+          .eq('account_id', account.id)
+          .single();
+
+        if (balanceError) throw balanceError;
+
+        if (balanceData) {
+          setBalance(balanceData.available_balance);
         }
       } catch (err) {
         console.error('Error fetching user data:', err);

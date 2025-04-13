@@ -1,162 +1,292 @@
-import { IonContent, IonPage, IonModal, IonButton } from '@ionic/react';
-import { FaArrowLeft, FaUser, FaDollarSign, FaQrcode, FaCopy } from 'react-icons/fa';
+import { IonContent, IonPage, IonAlert } from '@ionic/react';
+import { FaArrowLeft, FaExchangeAlt } from 'react-icons/fa';
+import { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
-import { useState } from 'react';
+import { supabase } from '../../supabaseClient';
 
 const Transfer: React.FC = () => {
-  const history = useHistory();
-  const [showQRModal, setShowQRModal] = useState(false);
-  const [showContactModal, setShowContactModal] = useState(false);
-  const [selectedContact, setSelectedContact] = useState<{ name: string; account: string } | null>(null);
+    const history = useHistory();
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState(false);
+    const [accountNumber, setAccountNumber] = useState('');
+    const [amount, setAmount] = useState('');
+    const [description, setDescription] = useState('');
+    const [balance, setBalance] = useState(0);
+    const [recipientName, setRecipientName] = useState('');
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [transferDetails, setTransferDetails] = useState<{
+        recipientAccount: string;
+        amount: number;
+        description: string;
+    } | null>(null);
 
-  const contacts = [
-    { name: 'John', account: '1234567890' },
-    { name: 'Jane', account: '9876543210' },
-    { name: 'Doe', account: '1122334455' },
-    { name: 'Alice', account: '5566778899' },
-    { name: 'Bob', account: '9988776655' },
-    { name: 'Charlie', account: '4433221100' },
-  ];
+    useEffect(() => {
+        const fetchBalance = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('No user found');
 
-  const handleContactClick = (contact: { name: string; account: string }) => {
-    setSelectedContact(contact);
-    setShowContactModal(true);
-  };
+                const { data: account, error: accountError } = await supabase
+                    .from('accounts')
+                    .select('id')
+                    .eq('email', user.email)
+                    .single();
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert('Account number copied to clipboard!');
-  };
+                if (accountError) throw accountError;
 
-  return (
-    <IonPage style={{ height: '100%', width: '100%' }}>
-      <IonContent
-        fullscreen
-        scrollY={true}
-        style={{
-          '--background': '#5EC95F',
-          height: '100%',
-          width: '100%',
-        }}
-      >
-        {/* Header - fixed height */}
-        <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
-          <FaArrowLeft
-            className="text-black text-2xl absolute left-4 cursor-pointer"
-            onClick={() => history.goBack()}
-          />
-          <img src="/bonk.png" alt="Bonk Logo" className="h-14" />
-        </div>
+                const { data: balanceData, error: balanceError } = await supabase
+                    .from('balances')
+                    .select('available_balance')
+                    .eq('account_id', account.id)
+                    .single();
 
-        {/* Main content area */}
-        <div className="flex flex-col bg-[#5EC95F] px-4 w-full min-h-[calc(100%-64px)] pb-4">
-          {/* Transfer Option */}
-          <div className="bg-white rounded-lg shadow-lg p-4 w-full mb-4">
-            <h2 className="text-gray-800 font-bold mb-4 text-center">Transfer</h2>
-            <div className="flex flex-col space-y-4">
-              <div className="flex items-center border border-gray-300 rounded-lg p-2 bg-gray-100">
-                <FaUser className="text-gray-500 mr-2" />
-                <input
-                  type="text"
-                  placeholder="Account Number"
-                  className="flex-1 outline-none bg-transparent text-black placeholder-gray-500"
-                />
-              </div>
-              <div className="flex items-center border border-gray-300 rounded-lg p-2 bg-gray-100">
-                <FaDollarSign className="text-gray-500 mr-2" />
-                <input
-                  type="number"
-                  placeholder="Amount"
-                  className="flex-1 outline-none bg-transparent text-black placeholder-gray-500"
-                />
-              </div>
-              <button className="bg-[#5EC95F] text-white font-bold py-2 px-4 rounded-lg hover:bg-[#4caf50] transition">
-                Transfer
-              </button>
-            </div>
-          </div>
+                if (balanceError) throw balanceError;
 
-          {/* Contacts Section */}
-          <div className="bg-white rounded-lg shadow-lg p-4 w-full mb-4">
-            <h2 className="text-gray-800 font-bold mb-4 text-center">Contacts</h2>
-            <div className="flex space-x-4 overflow-x-auto pb-2">
-              {contacts.map((contact, index) => (
-                <div
-                  key={index}
-                  className="flex flex-col items-center flex-shrink-0 cursor-pointer"
-                  onClick={() => handleContactClick(contact)}
-                >
-                  <div className="w-12 h-12 bg-gray-300 rounded-full overflow-hidden">
-                    <img src="/default-profile.png" alt={`${contact.name}'s profile`} className="w-full h-full object-cover" />
-                  </div>
-                  <p className="text-sm mt-1 font-bold">{contact.name}</p>
-                  <p className="text-xs text-gray-500">@{contact.name.toLowerCase()}_123</p>
-                </div>
-              ))}
-            </div>
-          </div>
+                setBalance(balanceData.available_balance);
+            } catch (err) {
+                console.error('Error fetching balance:', err);
+                setError('Failed to load balance');
+            }
+        };
 
-          {/* QR Transfer Option */}
-          <div className="bg-white rounded-lg shadow-lg p-4 w-full flex flex-col items-center">
-            <h2 className="text-gray-800 font-bold mb-4 text-center">Transfer/Pay through QR</h2>
-            <FaQrcode className="text-gray-500 text-8xl mb-4" />
-            <button
-              className="bg-[#5EC95F] text-white font-bold py-2 px-4 rounded-lg hover:bg-[#4caf50] transition"
-              onClick={() => setShowQRModal(true)}
+        fetchBalance();
+    }, []);
+
+    const validateInputs = () => {
+        if (!accountNumber || !amount || !description) {
+            setError('Please fill in all fields');
+            return false;
+        }
+
+        const amountNum = parseFloat(amount);
+        if (isNaN(amountNum) || amountNum <= 0) {
+            setError('Please enter a valid amount');
+            return false;
+        }
+
+        if (amountNum > balance) {
+            setError('Insufficient balance');
+            return false;
+        }
+
+        if (accountNumber.length !== 10) {
+            setError('Account number must be 10 digits');
+            return false;
+        }
+
+        return true;
+    };
+
+    const getRecipientDetails = async (accountNumber: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('accounts')
+                .select('id, first_name, last_name')
+                .eq('account_number', accountNumber)
+                .single();
+
+            if (error) throw error;
+            return data;
+        } catch (error) {
+            console.error('Error fetching recipient details:', error);
+            return null;
+        }
+    };
+
+    const handleTransfer = async () => {
+        if (!validateInputs()) return;
+
+        try {
+            setLoading(true);
+            setError('');
+
+            // Get recipient details
+            const recipientDetails = await getRecipientDetails(accountNumber);
+            if (!recipientDetails) {
+                setError('Recipient account not found');
+                return;
+            }
+
+            setRecipientName(`${recipientDetails.first_name} ${recipientDetails.last_name}`);
+            setTransferDetails({
+                recipientAccount: accountNumber,
+                amount: parseFloat(amount),
+                description
+            });
+            setShowConfirmDialog(true);
+        } catch (error) {
+            console.error('Error preparing transfer:', error);
+            setError('Failed to prepare transfer');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const confirmTransfer = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            if (!transferDetails) return;
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('No user found');
+
+            // Get sender's account
+            const { data: senderAccount, error: senderError } = await supabase
+                .from('accounts')
+                .select('id')
+                .eq('email', user.email)
+                .single();
+
+            if (senderError) throw senderError;
+
+            // Get recipient's account
+            const { data: recipientAccount, error: recipientError } = await supabase
+                .from('accounts')
+                .select('id')
+                .eq('account_number', transferDetails.recipientAccount)
+                .single();
+
+            if (recipientError) throw recipientError;
+
+            // Start a transaction
+            const { data: transaction, error: transactionError } = await supabase.rpc('transfer_money', {
+                sender_id: senderAccount.id,
+                recipient_id: recipientAccount.id,
+                amount: transferDetails.amount,
+                description: transferDetails.description
+            });
+
+            if (transactionError) throw transactionError;
+
+            setSuccess(true);
+            setTimeout(() => {
+                history.push('/dashboard');
+            }, 2000);
+
+        } catch (err) {
+            console.error('Error confirming transfer:', err);
+            setError('Failed to complete transfer');
+        } finally {
+            setLoading(false);
+            setShowConfirmDialog(false);
+        }
+    };
+
+    return (
+        <IonPage>
+            <IonContent 
+                style={{
+                    '--ion-background-color': '#ffffff',
+                    'height': '100vh',
+                    'overflow': 'hidden'
+                }}
             >
-              Open QR Scanner
-            </button>
-          </div>
-        </div>
+                <div className="flex flex-col h-full">
+                    {/* Header */}
+                    <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
+                        <FaArrowLeft
+                            className="text-black text-2xl absolute left-4 cursor-pointer"
+                            onClick={() => history.goBack()}
+                        />
+                        <h1 className="text-white text-xl font-bold">Transfer Money</h1>
+                    </div>
 
-        {/* QR Scanner Modal */}
-        <IonModal isOpen={showQRModal} onDidDismiss={() => setShowQRModal(false)}>
-          <div className="flex flex-col items-center justify-center h-full bg-white">
-            <h2 className="text-gray-800 font-bold mb-4">Scan QR Code</h2>
-            <FaQrcode className="text-gray-500 text-8xl mb-6" />
-            <div className="w-64 h-64 bg-gray-300 rounded-lg flex items-center justify-center">
-              <p className="text-gray-500">[QR Scanner]</p>
-            </div>
-            <IonButton
-              color="danger"
-              onClick={() => setShowQRModal(false)}
-              className="mt-6 w-40 text-center"
-            >
-              Close
-            </IonButton>
-          </div>
-        </IonModal>
+                    {/* Main Content */}
+                    <div className="flex-1 p-4 overflow-y-auto">
+                        {success ? (
+                            <div className="flex flex-col items-center justify-center h-full">
+                                <div className="text-green-500 text-6xl mb-4">✓</div>
+                                <h2 className="text-2xl font-bold text-black mb-2">Transfer Successful!</h2>
+                                <p className="text-gray-600 text-center">
+                                    Your transfer of ₱{parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                                    has been completed successfully.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="max-w-md mx-auto">
+                                <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+                                    <div className="mb-4">
+                                        <label className="block text-gray-700 text-sm font-bold mb-2">
+                                            Recipient Account Number
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={accountNumber}
+                                            onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                                            placeholder="Enter 10-digit account number"
+                                            maxLength={10}
+                                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                        />
+                                    </div>
 
-        {/* Contact Modal */}
-        <IonModal isOpen={showContactModal} onDidDismiss={() => setShowContactModal(false)}>
-          <div className="flex flex-col items-center justify-center h-full bg-white p-4">
-            {selectedContact && (
-              <>
-                <div className="w-24 h-24 bg-gray-300 rounded-full overflow-hidden mb-4">
-                  <img src="/default-profile.png" alt={`${selectedContact.name}'s profile`} className="w-full h-full object-cover" />
+                                    <div className="mb-4">
+                                        <label className="block text-gray-700 text-sm font-bold mb-2">
+                                            Amount
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={amount}
+                                            onChange={(e) => setAmount(e.target.value)}
+                                            placeholder="Enter amount"
+                                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                        />
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            Available Balance: ₱{balance.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-gray-700 text-sm font-bold mb-2">
+                                            Description
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
+                                            placeholder="Enter description"
+                                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                        />
+                                    </div>
+
+                                    {error && (
+                                        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+                                            {error}
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={handleTransfer}
+                                        disabled={loading}
+                                        className="w-full bg-[#5EC95F] text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-[#4AB54B] transition-colors disabled:opacity-50"
+                                    >
+                                        {loading ? 'Processing...' : 'Transfer'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-                <h2 className="text-gray-800 font-bold mb-2">{selectedContact.name}</h2>
-                <div className="flex items-center space-x-2 mb-4">
-                  <p className="text-gray-600">{selectedContact.account}</p>
-                  <FaCopy
-                    className="text-gray-500 cursor-pointer"
-                    onClick={() => copyToClipboard(selectedContact.account)}
-                  />
-                </div>
-                <IonButton
-                  color="danger"
-                  onClick={() => setShowContactModal(false)}
-                  className="w-40 text-center"
-                >
-                  Close
-                </IonButton>
-              </>
-            )}
-          </div>
-        </IonModal>
-      </IonContent>
-    </IonPage>
-  );
+
+                {/* Confirmation Dialog */}
+                <IonAlert
+                    isOpen={showConfirmDialog}
+                    onDidDismiss={() => setShowConfirmDialog(false)}
+                    header="Confirm Transfer"
+                    message={`
+                        Are you sure you want to transfer ₱${parseFloat(amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                        to ${recipientName} (Account: ${accountNumber})?
+                    `}
+                    buttons={[
+                        { text: 'Cancel', role: 'cancel' },
+                        { text: 'Confirm', handler: confirmTransfer }
+                    ]}
+                />
+            </IonContent>
+        </IonPage>
+    );
 };
 
 export default Transfer;

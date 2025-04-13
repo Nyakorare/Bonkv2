@@ -1,4 +1,4 @@
-import { IonContent, IonPage, IonAlert } from '@ionic/react';
+import { IonContent, IonPage, IonAlert, IonLoading } from '@ionic/react';
 import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity } from 'react-icons/fa'; // Updated to FaUniversity
 import { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom'; // Import useHistory
@@ -8,11 +8,27 @@ import { supabase } from '../../supabaseClient';
 interface Transaction {
   id: string;
   amount: number;
-  type: 'deposit' | 'withdrawal';
+  transaction_type: 'deposit' | 'withdrawal' | 'transfer';
   description: string;
   status: 'completed' | 'pending' | 'failed';
   created_at: string;
-  reference_number: string;
+  reference_id: string;
+}
+
+interface Account {
+  id: string;
+  account_number: string;
+}
+
+interface Profile {
+  first_name: string;
+  last_name: string;
+  avatar_url: string | null;
+}
+
+interface Balance {
+  available_balance: number;
+  total_balance: number;
 }
 
 const Dashboard: React.FC = () => {
@@ -23,42 +39,57 @@ const Dashboard: React.FC = () => {
     const [firstName, setFirstName] = useState('');
     const [profileImage, setProfileImage] = useState('/default-profile.png');
     const [balance, setBalance] = useState(0);
+    const [accountNumber, setAccountNumber] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const adImages = ['/ad1.png', '/ad2.png', '/ad3.png']; // Removed leading slash
     const [transactions, setTransactions] = useState<Transaction[]>([]);
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
+                setLoading(true);
+                setError(null);
+
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error('No user found');
+
+                // Fetch account data
+                const { data: account, error: accountError } = await supabase
+                    .from('accounts')
+                    .select('id, account_number')
+                    .eq('email', user.email)
+                    .single();
+
+                if (accountError) throw accountError;
+                if (!account) throw new Error('Account not found');
+
+                setAccountNumber(account.account_number);
 
                 // Fetch profile data
                 const { data: profile, error: profileError } = await supabase
                     .from('profiles')
-                    .select('full_name, avatar_url')
-                    .eq('id', user.id)
+                    .select('first_name, last_name, avatar_url')
+                    .eq('account_id', account.id)
                     .single();
 
                 if (profileError) throw profileError;
+                if (!profile) throw new Error('Profile not found');
 
-                if (profile) {
-                    const nameParts = profile.full_name.split(' ');
-                    setFirstName(nameParts[0]);
-                    setProfileImage(profile.avatar_url || '/default-profile.png');
-                }
+                setFirstName(profile.first_name);
+                setProfileImage(profile.avatar_url || '/default-profile.png');
 
-                // Fetch account balance
-                const { data: account, error: accountError } = await supabase
-                    .from('accounts')
-                    .select('id, balance')
-                    .eq('user_id', user.id)
+                // Fetch balance
+                const { data: balanceData, error: balanceError } = await supabase
+                    .from('balances')
+                    .select('available_balance, total_balance')
+                    .eq('account_id', account.id)
                     .single();
 
-                if (accountError) throw accountError;
+                if (balanceError) throw balanceError;
+                if (!balanceData) throw new Error('Balance not found');
 
-                if (account) {
-                    setBalance(account.balance || 0);
-                }
+                setBalance(balanceData.available_balance);
 
                 // Fetch recent transactions
                 const { data: transactionsData, error: transactionsError } = await supabase
@@ -70,11 +101,13 @@ const Dashboard: React.FC = () => {
 
                 if (transactionsError) throw transactionsError;
 
-                if (transactionsData) {
-                    setTransactions(transactionsData);
-                }
+                setTransactions(transactionsData || []);
+
             } catch (err) {
                 console.error('Error fetching user data:', err);
+                setError(err instanceof Error ? err.message : 'Failed to load data');
+            } finally {
+                setLoading(false);
             }
         };
 
@@ -106,6 +139,54 @@ const Dashboard: React.FC = () => {
             window.location.href = '/login';
         }
     };
+
+    const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('en-PH', {
+            style: 'currency',
+            currency: 'PHP',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount);
+    };
+
+    const formatTransactionAmount = (amount: number, type: string) => {
+        const formattedAmount = formatCurrency(Math.abs(amount));
+        return `${type === 'deposit' ? '+' : '-'}${formattedAmount}`;
+    };
+
+    const formatDate = (dateString: string) => {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+
+    if (loading) {
+        return (
+            <IonLoading
+                isOpen={true}
+                message="Loading dashboard..."
+            />
+        );
+    }
+
+    if (error) {
+        return (
+            <IonPage>
+                <IonContent className="ion-padding">
+                    <div className="flex flex-col items-center justify-center h-full">
+                        <p className="text-red-500 mb-4">{error}</p>
+                        <button 
+                            onClick={() => window.location.reload()}
+                            className="bg-[#5EC95F] text-white px-4 py-2 rounded"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                </IonContent>
+            </IonPage>
+        );
+    }
 
     return (
         <IonPage>
@@ -157,7 +238,8 @@ const Dashboard: React.FC = () => {
                             <div className="mt-4 w-full max-w-md p-4 bg-white rounded-lg shadow-md flex items-center">
                                 <div className="flex-1">
                                     <span className="text-lg text-gray-600">Account Balance</span>
-                                    <div className="text-2xl font-bold text-black">₱ {balance.toFixed(2)}</div>
+                                    <div className="text-2xl font-bold text-black">{formatCurrency(balance)}</div>
+                                    <div className="text-sm text-gray-500 mt-1">Account: {accountNumber}</div>
                                 </div>
                                 <button 
                                     className="h-12 w-12 bg-[#5EC95F] text-white rounded-full flex items-center justify-center shadow-md text-2xl"
@@ -181,7 +263,7 @@ const Dashboard: React.FC = () => {
                                 ].map((item, index) => (
                                     <button 
                                         key={index}
-                                        className="h-full bg-gray-100 rounded-lg flex flex-col items-center justify-center p-1"
+                                        className="h-full bg-gray-100 rounded-lg flex flex-col items-center justify-center p-1 hover:bg-gray-200 transition-colors"
                                         onClick={item.action} // Add onClick for buttons with actions
                                     >
                                         {item.icon}
@@ -227,16 +309,15 @@ const Dashboard: React.FC = () => {
                                     <div>
                                         <span className="text-md text-gray-600">{transaction.description}</span>
                                         <div className="text-xs text-gray-400">
-                                            {new Date(transaction.created_at).toLocaleDateString('en-US', {
-                                                month: 'short',
-                                                day: 'numeric'
-                                            })}
+                                            {formatDate(transaction.created_at)}
                                         </div>
                                     </div>
                                     <span className={`text-md font-bold ${
-                                        transaction.type === 'deposit' ? 'text-green-500' : 'text-red-500'
+                                        transaction.transaction_type === 'deposit' ? 'text-green-500' : 
+                                        transaction.transaction_type === 'withdrawal' ? 'text-red-500' : 
+                                        'text-blue-500'
                                     }`}>
-                                        ₱ {Math.abs(transaction.amount).toFixed(2)}
+                                        {formatTransactionAmount(transaction.amount, transaction.transaction_type)}
                                     </span>
                                 </div>
                             ))
