@@ -1,9 +1,10 @@
 import { IonContent, IonPage, IonAlert, IonLoading } from '@ionic/react';
-import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity } from 'react-icons/fa'; // Updated to FaUniversity
+import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity } from 'react-icons/fa';
 import { useState, useEffect } from 'react';
-import { useHistory } from 'react-router-dom'; // Import useHistory
+import { useHistory } from 'react-router-dom';
 import bonkLogo from '/bonk.png';
 import { supabase } from '../../supabaseClient';
+import { handleLogout, resetSessionTimeout } from '../../utils/auth';
 
 interface Transaction {
   id: string;
@@ -32,7 +33,7 @@ interface Balance {
 }
 
 const Dashboard: React.FC = () => {
-    const history = useHistory(); // Initialize useHistory
+    const history = useHistory();
     const [showLogoutAlert, setShowLogoutAlert] = useState(false);
     const [currentAdIndex, setCurrentAdIndex] = useState(0);
     const [fade, setFade] = useState(true);
@@ -42,8 +43,26 @@ const Dashboard: React.FC = () => {
     const [accountNumber, setAccountNumber] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const adImages = ['/ad1.png', '/ad2.png', '/ad3.png']; // Removed leading slash
+    const adImages = ['/ad1.png', '/ad2.png', '/ad3.png'];
     const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+    // Set up session timeout
+    useEffect(() => {
+        resetSessionTimeout();
+
+        const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+        const resetTimeout = () => resetSessionTimeout();
+
+        activityEvents.forEach(event => {
+            window.addEventListener(event, resetTimeout);
+        });
+
+        return () => {
+            activityEvents.forEach(event => {
+                window.removeEventListener(event, resetTimeout);
+            });
+        };
+    }, []);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -54,7 +73,6 @@ const Dashboard: React.FC = () => {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) throw new Error('No user found');
 
-                // Fetch account data
                 const { data: account, error: accountError } = await supabase
                     .from('accounts')
                     .select('id, account_number')
@@ -66,20 +84,18 @@ const Dashboard: React.FC = () => {
 
                 setAccountNumber(account.account_number);
 
-                // Fetch profile data
-                const { data: profile, error: profileError } = await supabase
+                const { data: profileData, error: profileError } = await supabase
                     .from('profiles')
                     .select('first_name, last_name, avatar_url')
                     .eq('account_id', account.id)
                     .single();
 
                 if (profileError) throw profileError;
-                if (!profile) throw new Error('Profile not found');
+                if (!profileData) throw new Error('Profile not found');
 
-                setFirstName(profile.first_name);
-                setProfileImage(profile.avatar_url || '/default-profile.png');
+                setFirstName(profileData.first_name);
+                setProfileImage(profileData.avatar_url || '/default-profile.png');
 
-                // Fetch balance
                 const { data: balanceData, error: balanceError } = await supabase
                     .from('balances')
                     .select('available_balance, total_balance')
@@ -91,7 +107,6 @@ const Dashboard: React.FC = () => {
 
                 setBalance(balanceData.available_balance);
 
-                // Fetch recent transactions
                 const { data: transactionsData, error: transactionsError } = await supabase
                     .from('transactions')
                     .select('*')
@@ -100,7 +115,6 @@ const Dashboard: React.FC = () => {
                     .limit(3);
 
                 if (transactionsError) throw transactionsError;
-
                 setTransactions(transactionsData || []);
 
             } catch (err) {
@@ -125,18 +139,15 @@ const Dashboard: React.FC = () => {
         return () => clearInterval(interval);
     }, []);
 
-    const handleLogout = () => setShowLogoutAlert(true);
-    const confirmLogout = async () => {
+    const handleLogoutClick = async () => {
         try {
-            const { error } = await supabase.auth.signOut();
-            if (error) throw error;
-            
-            localStorage.removeItem('authToken');
-            history.push('/loading');
+            setLoading(true);
+            await handleLogout();
         } catch (err) {
-            console.error('Error signing out:', err);
-            // Fallback to direct navigation if there's an error
-            window.location.href = '/login';
+            console.error('Error logging out:', err);
+            setError('Failed to logout');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -189,107 +200,102 @@ const Dashboard: React.FC = () => {
     }
 
     return (
-        <IonPage>
+        <IonPage style={{ height: '100%', width: '100%' }}>
             <IonContent 
-                scrollY={false}
+                fullscreen
+                scrollY={true}
                 style={{
-                    '--ion-background-color': '#5EC95F',
-                    'height': '100vh',
-                    'overflow': 'hidden'
+                    '--background': '#5EC95F',
+                    height: '100%',
+                    width: '100%',
                 }}
             >
-                {/* Fixed Layout Container */}
+                {/* Header */}
+                <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
+                    <FaSignOutAlt
+                        className="text-black text-2xl absolute left-4 cursor-pointer"
+                        onClick={() => setShowLogoutAlert(true)}
+                    />
+                    <h1 className="text-black text-xl font-bold">Dashboard</h1>
+                </div>
+
+                {/* Main Content */}
                 <div className="flex flex-col h-full">
-                    {/* Fixed Header */}
-                    <div className="flex justify-center items-center p-4 bg-[#5EC95F] h-16">
-                        <FaSignOutAlt
-                            className="text-black text-3xl absolute left-4 cursor-pointer"
-                            onClick={handleLogout}
-                        />
-                        <img src={bonkLogo} alt="Bonk Logo" className="h-12" />
-                    </div>
-
-                    {/* Content Area */}
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        {/* Welcome Section */}
-                        <div className="flex flex-col items-center mt-2 px-4">
-                            {/* Profile and Settings */}
-                            <div className="w-full max-w-md flex items-center space-x-4">
-                                <div className="h-16 w-16 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
-                                    <img 
-                                        src={profileImage} 
-                                        alt="Profile" 
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                            e.currentTarget.src = '/default-profile.png';
-                                        }}
-                                    />
-                                </div>
-                                <span className="text-2xl font-bold">
-                                    <span className="text-black">Welcome, </span>
-                                    <span className="text-white" style={{ WebkitTextStroke: '1px black' }}>
-                                        {firstName}
-                                    </span>
+                    {/* Welcome Section */}
+                    <div className="flex flex-col items-center mt-2 px-4">
+                        {/* Profile and Settings */}
+                        <div className="w-full max-w-md flex items-center space-x-4">
+                            <div className="h-16 w-16 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
+                                <img 
+                                    src={profileImage} 
+                                    alt="Profile" 
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                        e.currentTarget.src = '/default-profile.png';
+                                    }}
+                                />
+                            </div>
+                            <span className="text-2xl font-bold">
+                                <span className="text-black">Welcome, </span>
+                                <span className="text-white" style={{ WebkitTextStroke: '1px black' }}>
+                                    {firstName}
                                 </span>
-                                <FaCog className="text-3xl text-black cursor-pointer ml-auto" onClick={() => history.push('/settings')} />
-                            </div>
-
-                            {/* Balance Card */}
-                            <div className="mt-4 w-full max-w-md p-4 bg-white rounded-lg shadow-md flex items-center">
-                                <div className="flex-1">
-                                    <span className="text-lg text-gray-600">Account Balance</span>
-                                    <div className="text-2xl font-bold text-black">{formatCurrency(balance)}</div>
-                                    <div className="text-sm text-gray-500 mt-1">Account: {accountNumber}</div>
-                                </div>
-                                <button 
-                                    className="h-12 w-12 bg-[#5EC95F] text-white rounded-full flex items-center justify-center shadow-md text-2xl"
-                                    onClick={() => history.push('/deposit')}
-                                >
-                                    +
-                                </button>
-                            </div>
+                            </span>
+                            <FaCog className="text-3xl text-black cursor-pointer ml-auto" onClick={() => history.push('/settings')} />
                         </div>
 
-                        {/* Action Buttons Grid - Made more compact */}
-                        <div className="mt-2 px-4" style={{ height: '30%' }}>
-                            <div className="bg-white rounded-lg shadow-md p-2 grid grid-cols-3 gap-2 h-full">
-                                {[ 
-                                    { icon: <FaMoneyBillWave className="text-2xl text-black" />, label: "Deposit", action: () => history.push('/deposit') },
-                                    { icon: <FaWallet className="text-2xl text-black" />, label: "Withdraw", action: () => history.push('/withdraw') },
-                                    { icon: <FaUniversity className="text-2xl text-black" />, label: "Pay/  Transfer", action: () => history.push('/transfer') },
-                                    { icon: <FaExchangeAlt className="text-2xl text-black" />, label: "Transactions", action: () => history.push('/transactions') },
-                                    { icon: <FaCreditCard className="text-2xl text-black" />, label: "Card", action: () => history.push('/card') },
-                                    { icon: <FaChartLine className="text-2xl text-black" />, label: "Investment", action: () => history.push('/investment') },
-                                ].map((item, index) => (
-                                    <button 
-                                        key={index}
-                                        className="h-full bg-gray-100 rounded-lg flex flex-col items-center justify-center p-1 hover:bg-gray-200 transition-colors"
-                                        onClick={item.action} // Add onClick for buttons with actions
-                                    >
-                                        {item.icon}
-                                        <span className="text-xs mt-1 text-black font-medium">{item.label}</span>
-                                    </button>
-                                ))}
+                        {/* Balance Card */}
+                        <div className="mt-4 w-full max-w-md p-4 bg-white rounded-lg shadow-md flex items-center">
+                            <div className="flex-1">
+                                <span className="text-lg text-gray-600">Account Balance</span>
+                                <div className="text-2xl font-bold text-black">{formatCurrency(balance)}</div>
+                                <div className="text-sm text-gray-500 mt-1">Account: {accountNumber}</div>
                             </div>
-                        </div>
-
-                        {/* Spacer between buttons and ad */}
-                        <div className="flex-1"></div>
-
-                        {/* Ad Banner */}
-                        <div className="px-4 pb-2">
-                            <img 
-                                src={adImages[currentAdIndex]} 
-                                alt="Advertisement"
-                                className={`w-full h-48 object-cover rounded-lg shadow-md transition-opacity duration-500 ${
-                                    fade ? 'opacity-100' : 'opacity-0'
-                                }`}
-                            />
+                            <button 
+                                className="h-12 w-12 bg-[#5EC95F] text-white rounded-full flex items-center justify-center shadow-md text-2xl"
+                                onClick={() => history.push('/deposit')}
+                            >
+                                +
+                            </button>
                         </div>
                     </div>
 
-                    {/* Fixed Transaction History Panel */}
-                    <div className="bg-white rounded-t-xl shadow-lg p-4 h-1/4">
+                    {/* Action Buttons Grid */}
+                    <div className="mt-2 px-4" style={{ height: '30%' }}>
+                        <div className="bg-white rounded-lg shadow-md p-2 grid grid-cols-3 gap-2 h-full">
+                            {[ 
+                                { icon: <FaMoneyBillWave className="text-2xl text-black" />, label: "Deposit", action: () => history.push('/deposit') },
+                                { icon: <FaWallet className="text-2xl text-black" />, label: "Withdraw", action: () => history.push('/withdraw') },
+                                { icon: <FaUniversity className="text-2xl text-black" />, label: "Pay/Transfer", action: () => history.push('/transfer') },
+                                { icon: <FaExchangeAlt className="text-2xl text-black" />, label: "Transactions", action: () => history.push('/transactions') },
+                                { icon: <FaCreditCard className="text-2xl text-black" />, label: "Card", action: () => history.push('/card') },
+                                { icon: <FaChartLine className="text-2xl text-black" />, label: "Investment", action: () => history.push('/investment') },
+                            ].map((item, index) => (
+                                <button 
+                                    key={index}
+                                    className="h-full bg-gray-100 rounded-lg flex flex-col items-center justify-center p-1 hover:bg-gray-200 transition-colors"
+                                    onClick={item.action}
+                                >
+                                    {item.icon}
+                                    <span className="text-xs mt-1 text-black font-medium">{item.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Ad Banner */}
+                    <div className="px-4 pb-2">
+                        <img 
+                            src={adImages[currentAdIndex]} 
+                            alt="Advertisement"
+                            className={`w-full h-48 object-cover rounded-lg shadow-md transition-opacity duration-500 ${
+                                fade ? 'opacity-100' : 'opacity-0'
+                            }`}
+                        />
+                    </div>
+
+                    {/* Transaction History Panel */}
+                    <div className="bg-white rounded-t-xl shadow-lg p-4">
                         <div className="flex justify-between items-center mb-2">
                             <h3 className="font-bold text-black text-lg">Recent Transactions</h3>
                             <button 
@@ -333,8 +339,17 @@ const Dashboard: React.FC = () => {
                     message="Are you sure you want to logout?"
                     buttons={[
                         { text: 'Cancel', role: 'cancel' },
-                        { text: 'Logout', handler: confirmLogout }
+                        { text: 'Logout', handler: handleLogoutClick }
                     ]}
+                />
+
+                {/* Error Alert */}
+                <IonAlert
+                    isOpen={!!error}
+                    onDidDismiss={() => setError(null)}
+                    header="Error"
+                    message={error || ''}
+                    buttons={['OK']}
                 />
             </IonContent>
         </IonPage>

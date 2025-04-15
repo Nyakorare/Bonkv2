@@ -3,6 +3,7 @@ import { FaArrowLeft, FaExchangeAlt } from 'react-icons/fa';
 import { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
+import { resetSessionTimeout } from '../../utils/auth';
 
 const Transfer: React.FC = () => {
     const history = useHistory();
@@ -20,6 +21,26 @@ const Transfer: React.FC = () => {
         amount: number;
         description: string;
     } | null>(null);
+
+    // Set up session timeout
+    useEffect(() => {
+        // Reset timeout on mount
+        resetSessionTimeout();
+
+        // Set up activity listeners
+        const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+        const resetTimeout = () => resetSessionTimeout();
+
+        activityEvents.forEach(event => {
+            window.addEventListener(event, resetTimeout);
+        });
+
+        return () => {
+            activityEvents.forEach(event => {
+                window.removeEventListener(event, resetTimeout);
+            });
+        };
+    }, []);
 
     useEffect(() => {
         const fetchBalance = async () => {

@@ -3,6 +3,7 @@ import { FaArrowLeft, FaUser, FaLock, FaCamera } from 'react-icons/fa';
 import { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
+import { handleLogout, resetSessionTimeout } from '../../utils/auth';
 
 const Settings: React.FC = () => {
     const history = useHistory();
@@ -16,7 +17,28 @@ const Settings: React.FC = () => {
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showLogoutAlert, setShowLogoutAlert] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Set up session timeout
+    useEffect(() => {
+        // Reset timeout on mount
+        resetSessionTimeout();
+
+        // Set up activity listeners
+        const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+        const resetTimeout = () => resetSessionTimeout();
+
+        activityEvents.forEach(event => {
+            window.addEventListener(event, resetTimeout);
+        });
+
+        return () => {
+            activityEvents.forEach(event => {
+                window.removeEventListener(event, resetTimeout);
+            });
+        };
+    }, []);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -157,6 +179,18 @@ const Settings: React.FC = () => {
         }
     };
 
+    const handleLogoutClick = async () => {
+        try {
+            setLoading(true);
+            await handleLogout();
+        } catch (err) {
+            console.error('Error logging out:', err);
+            setError('Failed to logout');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <IonPage style={{ height: '100%', width: '100%' }}>
             <IonContent 
@@ -172,7 +206,7 @@ const Settings: React.FC = () => {
                 <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
                     <FaArrowLeft
                         className="text-black text-2xl absolute left-4 cursor-pointer"
-                        onClick={() => history.goBack()}
+                        onClick={() => history.push('/dashboard')}
                     />
                     <h1 className="text-black text-xl font-bold">Account Settings</h1>
                 </div>
@@ -301,7 +335,28 @@ const Settings: React.FC = () => {
                     >
                         {loading ? 'Saving...' : 'Save Changes'}
                     </button>
+
+                    {/* Add Logout Button */}
+                    <button
+                        className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-red-600 transition-colors mt-6"
+                        onClick={() => setShowLogoutAlert(true)}
+                        disabled={loading}
+                    >
+                        {loading ? 'Logging out...' : 'Logout'}
+                    </button>
                 </div>
+
+                {/* Logout Confirmation Alert */}
+                <IonAlert
+                    isOpen={showLogoutAlert}
+                    onDidDismiss={() => setShowLogoutAlert(false)}
+                    header="Logout"
+                    message="Are you sure you want to logout?"
+                    buttons={[
+                        { text: 'Cancel', role: 'cancel' },
+                        { text: 'Logout', handler: handleLogoutClick }
+                    ]}
+                />
 
                 {/* Success Alert */}
                 <IonAlert
