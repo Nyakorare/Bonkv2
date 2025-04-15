@@ -16,7 +16,7 @@ const CardPage: React.FC = () => {
     cvv: '123',
     cardHolder: 'Juan Dela Cruz',
     cardType: 'VISA',
-    balance: '₱24,500.00',
+    balance: '₱0',
     transactions: [
       { id: 1, merchant: 'Lazada', amount: -2499.50, date: '2023-05-15', category: 'Shopping' },
       { id: 2, merchant: 'Starbucks', amount: -175.75, date: '2023-05-14', category: 'Food & Drink' },

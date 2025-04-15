@@ -46,8 +46,8 @@ const InvestmentPage: React.FC = () => {
 
   // Mock investment data with icons
   const investmentData: InvestmentData = {
-    portfolioValue: '₱82,450.75',
-    totalReturns: '+₱7,130.25 (+8.2%)',
+    portfolioValue: '₱0',
+    totalReturns: '+₱0 (+0%)',
     investments: [
       { 
         id: 1, 

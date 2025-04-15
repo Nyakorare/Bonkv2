@@ -1,5 +1,5 @@
 import { IonContent, IonPage, IonAlert } from '@ionic/react';
-import { FaArrowLeft, FaUser, FaLock, FaCamera } from 'react-icons/fa';
+import { FaArrowLeft, FaUser, FaLock, FaCamera, FaSignOutAlt } from 'react-icons/fa';
 import { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
@@ -18,6 +18,7 @@ const Settings: React.FC = () => {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showLogoutAlert, setShowLogoutAlert] = useState(false);
+    const [showSuccessAlert, setShowSuccessAlert] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Set up session timeout
@@ -169,23 +170,16 @@ const Settings: React.FC = () => {
                 if (passwordError) throw passwordError;
             }
 
-            setSuccess(true);
-            setTimeout(() => setSuccess(false), 3000);
+            // Show success message
+            setShowSuccessAlert(true);
+            
+            // After showing success, trigger logout
+            setTimeout(async () => {
+                await handleLogout();
+            }, 1500);
         } catch (err) {
             console.error('Error saving changes:', err);
             setError(err instanceof Error ? err.message : 'Failed to save changes');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleLogoutClick = async () => {
-        try {
-            setLoading(true);
-            await handleLogout();
-        } catch (err) {
-            console.error('Error logging out:', err);
-            setError('Failed to logout');
         } finally {
             setLoading(false);
         }
@@ -354,16 +348,16 @@ const Settings: React.FC = () => {
                     message="Are you sure you want to logout?"
                     buttons={[
                         { text: 'Cancel', role: 'cancel' },
-                        { text: 'Logout', handler: handleLogoutClick }
+                        { text: 'Logout', handler: handleLogout }
                     ]}
                 />
 
                 {/* Success Alert */}
                 <IonAlert
-                    isOpen={success}
-                    onDidDismiss={() => setSuccess(false)}
+                    isOpen={showSuccessAlert}
+                    onDidDismiss={() => setShowSuccessAlert(false)}
                     header="Success"
-                    message="Changes saved successfully!"
+                    message="Settings saved successfully. You will be logged out."
                     buttons={['OK']}
                 />
 

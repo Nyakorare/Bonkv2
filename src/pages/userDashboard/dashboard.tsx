@@ -216,7 +216,7 @@ const Dashboard: React.FC = () => {
                         className="text-black text-2xl absolute left-4 cursor-pointer"
                         onClick={() => setShowLogoutAlert(true)}
                     />
-                    <h1 className="text-black text-xl font-bold">Dashboard</h1>
+                    <img src="/bonk.png" alt="Bonk Logo" className="h-12 w-auto" />
                 </div>
 
                 {/* Main Content */}
