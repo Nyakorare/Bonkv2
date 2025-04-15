@@ -1,5 +1,5 @@
 import { IonContent, IonPage } from '@ionic/react';
-import { FaFingerprint, FaInfoCircle } from 'react-icons/fa';
+import { FaInfoCircle } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
@@ -154,9 +154,6 @@ const Login: React.FC = () => {
                 Forgot password?
               </p>
               <hr className="w-full border-t-2 border-white mb-6" />
-              <div className="flex justify-center">
-                <FaFingerprint className="text-black text-6xl" />
-              </div>
             </div>
           </div>
           

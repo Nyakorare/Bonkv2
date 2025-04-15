@@ -1,5 +1,5 @@
-import { IonContent, IonPage, IonAlert, IonLoading, IonRefresher, IonRefresherContent } from '@ionic/react';
-import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity } from 'react-icons/fa';
+import { IonContent, IonPage, IonAlert, IonLoading, IonRefresher, IonRefresherContent, IonModal } from '@ionic/react';
+import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity, FaQrcode } from 'react-icons/fa';
 import { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import bonkLogo from '/bonk.png';
@@ -48,6 +48,7 @@ const Dashboard: React.FC = () => {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const touchStartX = useRef<number | null>(null);
     const touchEndX = useRef<number | null>(null);
+    const [showQRModal, setShowQRModal] = useState(false);
 
     // Set up session timeout
     useEffect(() => {
@@ -462,6 +463,38 @@ const Dashboard: React.FC = () => {
                     message={error || ''}
                     buttons={['OK']}
                 />
+
+                {/* Sticky QR Scan Button */}
+                <div className="fixed bottom-6 right-6 z-50">
+                    <button
+                        onClick={() => setShowQRModal(true)}
+                        className="bg-gray-800 text-white p-4 rounded-full shadow-lg hover:bg-gray-700 transition-colors"
+                    >
+                        <FaQrcode className="text-2xl" />
+                    </button>
+                </div>
+
+                {/* QR Scan Modal */}
+                <IonModal isOpen={showQRModal} onDidDismiss={() => setShowQRModal(false)}>
+                    <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
+                        <h2 className="text-xl font-bold text-black mb-4">Scan QR Code</h2>
+                        <div className="bg-gray-100 p-4 rounded-md border border-gray-300 w-full max-w-md">
+                            <div className="flex justify-center mb-4">
+                                <FaQrcode className="text-6xl text-black" />
+                            </div>
+                            <div className="text-sm text-black text-center mb-4">
+                                Position the QR code within the frame to scan
+                            </div>
+                            {/* Add your QR scanner component here */}
+                        </div>
+                        <button
+                            className="bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
+                            onClick={() => setShowQRModal(false)}
+                        >
+                            Close
+                        </button>
+                    </div>
+                </IonModal>
             </IonContent>
         </IonPage>
     );
