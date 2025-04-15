@@ -126,7 +126,7 @@ const InvestmentPage: React.FC = () => {
         {/* Header */}
         <div className="sticky top-0 z-10 bg-[#5EC95F] p-4 flex justify-center items-center h-16 shadow-sm">
           <button 
-            onClick={() => history.goBack()}
+            onClick={() => history.push('/dashboard')}
             className="absolute left-4 text-white hover:opacity-80 transition-opacity"
           >
             <FaArrowLeft className="text-2xl" />

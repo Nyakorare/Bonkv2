@@ -35,6 +35,7 @@ interface Balance {
 const Dashboard: React.FC = () => {
     const history = useHistory();
     const [showLogoutAlert, setShowLogoutAlert] = useState(false);
+    const [showBackAlert, setShowBackAlert] = useState(false);
     const [currentAdIndex, setCurrentAdIndex] = useState(0);
     const [fade, setFade] = useState(true);
     const [firstName, setFirstName] = useState('');
@@ -62,6 +63,32 @@ const Dashboard: React.FC = () => {
                 window.removeEventListener(event, resetTimeout);
             });
         };
+    }, []);
+
+    // Prevent going back to login
+    useEffect(() => {
+        const unblock = history.block((location, action) => {
+            if (action === 'POP' && location.pathname === '/login') {
+                setShowBackAlert(true);
+                return false;
+            }
+            return true;
+        });
+
+        return () => unblock();
+    }, [history]);
+
+    // Handle back button press
+    useEffect(() => {
+        const handleBackButton = (e: PopStateEvent) => {
+            if (window.location.pathname === '/login') {
+                e.preventDefault();
+                setShowBackAlert(true);
+            }
+        };
+
+        window.addEventListener('popstate', handleBackButton);
+        return () => window.removeEventListener('popstate', handleBackButton);
     }, []);
 
     useEffect(() => {
@@ -333,15 +360,41 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Logout Confirmation */}
+                {/* Logout Alert */}
                 <IonAlert
                     isOpen={showLogoutAlert}
                     onDidDismiss={() => setShowLogoutAlert(false)}
                     header="Logout"
                     message="Are you sure you want to logout?"
                     buttons={[
-                        { text: 'Cancel', role: 'cancel' },
-                        { text: 'Logout', handler: handleLogoutClick }
+                        {
+                            text: 'Cancel',
+                            role: 'cancel',
+                            handler: () => setShowLogoutAlert(false)
+                        },
+                        {
+                            text: 'Logout',
+                            handler: handleLogoutClick
+                        }
+                    ]}
+                />
+
+                {/* Back Button Alert */}
+                <IonAlert
+                    isOpen={showBackAlert}
+                    onDidDismiss={() => setShowBackAlert(false)}
+                    header="Logout"
+                    message="Going back will log you out. Do you want to continue?"
+                    buttons={[
+                        {
+                            text: 'Cancel',
+                            role: 'cancel',
+                            handler: () => setShowBackAlert(false)
+                        },
+                        {
+                            text: 'Logout',
+                            handler: handleLogoutClick
+                        }
                     ]}
                 />
 

@@ -50,7 +50,7 @@ const CardPage: React.FC = () => {
         <div className="flex justify-center items-center p-4 bg-[#5EC95F] sticky top-0 z-10 h-16">
           <FaArrowLeft
             className="absolute left-4 text-black text-2xl cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => history.goBack()}
+            onClick={() => history.push('/dashboard')}
           />
           <div>
           <img src="/bonk.png" alt="Bonk Logo" className="h-14" />

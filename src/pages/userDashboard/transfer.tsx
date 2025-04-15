@@ -173,7 +173,7 @@ const Transfer: React.FC = () => {
                 <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
                     <FaArrowLeft
                         className="text-black text-2xl absolute left-4 cursor-pointer"
-                        onClick={() => history.goBack()}
+                        onClick={() => history.push('/dashboard')}
                     />
                     <h1 className="text-white text-xl font-bold">Transfer Money</h1>
                 </div>
