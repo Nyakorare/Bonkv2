@@ -1,6 +1,6 @@
-import { IonContent, IonPage, IonAlert, IonLoading } from '@ionic/react';
+import { IonContent, IonPage, IonAlert, IonLoading, IonRefresher, IonRefresherContent } from '@ionic/react';
 import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity } from 'react-icons/fa';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import bonkLogo from '/bonk.png';
 import { supabase } from '../../supabaseClient';
@@ -46,6 +46,8 @@ const Dashboard: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const adImages = ['/ad1.png', '/ad2.png', '/ad3.png'];
     const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const touchStartX = useRef<number | null>(null);
+    const touchEndX = useRef<number | null>(null);
 
     // Set up session timeout
     useEffect(() => {
@@ -91,67 +93,76 @@ const Dashboard: React.FC = () => {
         return () => window.removeEventListener('popstate', handleBackButton);
     }, []);
 
+    const fetchUserData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('No user found');
+
+            const { data: account, error: accountError } = await supabase
+                .from('accounts')
+                .select('id, account_number')
+                .eq('email', user.email)
+                .single();
+
+            if (accountError) throw accountError;
+            if (!account) throw new Error('Account not found');
+
+            setAccountNumber(account.account_number);
+
+            const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('first_name, last_name, avatar_url')
+                .eq('account_id', account.id)
+                .single();
+
+            if (profileError) throw profileError;
+            if (!profileData) throw new Error('Profile not found');
+
+            setFirstName(profileData.first_name);
+            setProfileImage(profileData.avatar_url || '/default-profile.png');
+
+            const { data: balanceData, error: balanceError } = await supabase
+                .from('balances')
+                .select('available_balance, total_balance')
+                .eq('account_id', account.id)
+                .single();
+
+            if (balanceError) throw balanceError;
+            if (!balanceData) throw new Error('Balance not found');
+
+            setBalance(balanceData.available_balance);
+
+            // Get today's date at midnight
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            const { data: transactionsData, error: transactionsError } = await supabase
+                .from('transactions')
+                .select('*')
+                .eq('account_id', account.id)
+                .gte('created_at', today.toISOString())
+                .lt('created_at', tomorrow.toISOString())
+                .order('created_at', { ascending: false })
+                .limit(3);
+
+            if (transactionsError) throw transactionsError;
+            setTransactions(transactionsData || []);
+
+        } catch (err) {
+            console.error('Error fetching user data:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load data');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Initial data fetch
     useEffect(() => {
-        const fetchUserData = async () => {
-            try {
-                setLoading(true);
-                setError(null);
-
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) throw new Error('No user found');
-
-                const { data: account, error: accountError } = await supabase
-                    .from('accounts')
-                    .select('id, account_number')
-                    .eq('email', user.email)
-                    .single();
-
-                if (accountError) throw accountError;
-                if (!account) throw new Error('Account not found');
-
-                setAccountNumber(account.account_number);
-
-                const { data: profileData, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('first_name, last_name, avatar_url')
-                    .eq('account_id', account.id)
-                    .single();
-
-                if (profileError) throw profileError;
-                if (!profileData) throw new Error('Profile not found');
-
-                setFirstName(profileData.first_name);
-                setProfileImage(profileData.avatar_url || '/default-profile.png');
-
-                const { data: balanceData, error: balanceError } = await supabase
-                    .from('balances')
-                    .select('available_balance, total_balance')
-                    .eq('account_id', account.id)
-                    .single();
-
-                if (balanceError) throw balanceError;
-                if (!balanceData) throw new Error('Balance not found');
-
-                setBalance(balanceData.available_balance);
-
-                const { data: transactionsData, error: transactionsError } = await supabase
-                    .from('transactions')
-                    .select('*')
-                    .eq('account_id', account.id)
-                    .order('created_at', { ascending: false })
-                    .limit(3);
-
-                if (transactionsError) throw transactionsError;
-                setTransactions(transactionsData || []);
-
-            } catch (err) {
-                console.error('Error fetching user data:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load data');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         fetchUserData();
     }, []);
 
@@ -201,6 +212,39 @@ const Dashboard: React.FC = () => {
         });
     };
 
+    // Add touch event handlers for swipe detection
+    const handleTouchStart = (e: React.TouchEvent) => {
+        touchStartX.current = e.touches[0].clientX;
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        touchEndX.current = e.touches[0].clientX;
+    };
+
+    const handleTouchEnd = () => {
+        if (touchStartX.current && touchEndX.current) {
+            const swipeDistance = touchEndX.current - touchStartX.current;
+            const minSwipeDistance = 100; // Minimum distance for a swipe to be considered
+
+            if (Math.abs(swipeDistance) > minSwipeDistance) {
+                setShowLogoutAlert(true);
+            }
+        }
+        touchStartX.current = null;
+        touchEndX.current = null;
+    };
+
+    const handleRefresh = async (event: CustomEvent) => {
+        try {
+            await fetchUserData();
+        } catch (err) {
+            console.error('Error refreshing data:', err);
+            setError(err instanceof Error ? err.message : 'Failed to refresh data');
+        } finally {
+            event.detail.complete();
+        }
+    };
+
     if (loading) {
         return (
             <IonLoading
@@ -238,7 +282,19 @@ const Dashboard: React.FC = () => {
                     height: '100%',
                     width: '100%',
                 }}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
             >
+                <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>
+                    <IonRefresherContent
+                        pullingIcon="lines"
+                        refreshingSpinner="lines"
+                        pullingText="Pull to refresh"
+                        refreshingText="Refreshing..."
+                    />
+                </IonRefresher>
+
                 {/* Header */}
                 <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
                     <FaSignOutAlt
