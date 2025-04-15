@@ -26,8 +26,13 @@ export const handleLogout = async () => {
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
         
-        // Force a hard refresh of the app
-        window.location.href = '/login';
+        // First redirect to loading page
+        window.location.href = '/loading';
+        
+        // After a short delay, redirect to login
+        setTimeout(() => {
+            window.location.href = '/login';
+        }, 1000);
     } catch (error) {
         console.error('Error logging out:', error);
         throw error;

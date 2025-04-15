@@ -162,7 +162,9 @@ const Dashboard: React.FC = () => {
 
     const formatTransactionAmount = (amount: number, type: string) => {
         const formattedAmount = formatCurrency(Math.abs(amount));
-        return `${type === 'deposit' ? '+' : '-'}${formattedAmount}`;
+        if (type === 'deposit') return `+${formattedAmount}`;
+        if (type === 'withdrawal') return `-${formattedAmount}`;
+        return amount > 0 ? `+${formattedAmount}` : `-${formattedAmount}`;
     };
 
     const formatDate = (dateString: string) => {
@@ -321,7 +323,7 @@ const Dashboard: React.FC = () => {
                                     <span className={`text-md font-bold ${
                                         transaction.transaction_type === 'deposit' ? 'text-green-500' : 
                                         transaction.transaction_type === 'withdrawal' ? 'text-red-500' : 
-                                        'text-blue-500'
+                                        transaction.amount > 0 ? 'text-green-500' : 'text-red-500'
                                     }`}>
                                         {formatTransactionAmount(transaction.amount, transaction.transaction_type)}
                                     </span>

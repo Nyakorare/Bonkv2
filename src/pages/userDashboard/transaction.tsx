@@ -194,10 +194,15 @@ const TransactionHistory: React.FC = () => {
                     <div className="flex items-center">
                       <span 
                         className={`text-md font-bold ${
-                          transaction.transaction_type === 'deposit' ? 'text-green-500' : transaction.transaction_type === 'withdrawal' ? 'text-red-500' : 'text-blue-500'
+                          transaction.transaction_type === 'deposit' ? 'text-green-500' : 
+                          transaction.transaction_type === 'withdrawal' ? 'text-red-500' : 
+                          transaction.amount > 0 ? 'text-green-500' : 'text-red-500'
                         }`}
                       >
-                        ₱ {Math.abs(transaction.amount).toFixed(2)}
+                        {transaction.transaction_type === 'deposit' ? '+' : 
+                         transaction.transaction_type === 'withdrawal' ? '-' : 
+                         transaction.amount > 0 ? '+' : '-'}
+                        ₱{Math.abs(transaction.amount).toFixed(2)}
                       </span>
                       <FaChevronDown 
                         className={`ml-2 transition-transform ${

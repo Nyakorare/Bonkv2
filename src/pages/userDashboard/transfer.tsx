@@ -146,8 +146,10 @@ const Transfer: React.FC = () => {
             if (transactionError) throw transactionError;
 
             setSuccess(true);
+            // Add a small delay to show the success message
             setTimeout(() => {
-                history.push('/dashboard');
+                // Force a hard refresh of the dashboard
+                window.location.href = '/dashboard';
             }, 2000);
         } catch (err) {
             console.error('Transfer error:', err);
