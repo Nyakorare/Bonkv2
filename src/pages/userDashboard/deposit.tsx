@@ -19,10 +19,8 @@ const Deposit: React.FC = () => {
   const [isOTCDepositComplete, setIsOTCDepositComplete] = useState(false);
   const [otcReferenceNumber, setOtcReferenceNumber] = useState('');
   const [showConfirmationQR, setShowConfirmationQR] = useState(false);
-  const [confirmerBalance, setConfirmerBalance] = useState(0);
-  const [confirmerAccount, setConfirmerAccount] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
-  const [showScannerConfirmModal, setShowScannerConfirmModal] = useState(false);
+  const [confirmerAccount, setConfirmerAccount] = useState<string>('');
+  const [confirmerBalance, setConfirmerBalance] = useState<number>(0);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState({
     date: '',
@@ -31,6 +29,9 @@ const Deposit: React.FC = () => {
     referenceNumber: '',
     status: ''
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [showScannerConfirmModal, setShowScannerConfirmModal] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -84,8 +85,8 @@ const Deposit: React.FC = () => {
       const expiryTime = new Date();
       expiryTime.setMinutes(expiryTime.getMinutes() + 15);
       setOtcExpiryTime(expiryTime);
-      // Generate a random reference number
-      setOtcReferenceNumber(`OTC-${Math.floor(100000 + Math.random() * 900000)}`);
+      // Generate a random reference number with OTCD prefix
+      setOtcReferenceNumber(`OTCD-${Math.floor(100000 + Math.random() * 900000)}`);
     }
   }, [selectedOption, showOTCModal]);
 
@@ -122,7 +123,13 @@ const Deposit: React.FC = () => {
   const handleConfirmerScan = async (scannedData: string) => {
     try {
       // Parse the scanned data (assuming it's a JSON string with account number)
-      const { accountNumber: confirmerAccountNumber } = JSON.parse(scannedData);
+      const { accountNumber: confirmerAccountNumber, referenceNumber } = JSON.parse(scannedData);
+      
+      // Check if this is a valid OTC deposit QR code
+      if (!referenceNumber || !referenceNumber.startsWith('OTCD')) {
+        alert('Invalid QR code: This is not a valid deposit QR code');
+        return;
+      }
       
       // Fetch confirmer's balance
       const { data: confirmerData, error: confirmerError } = await supabase
@@ -161,28 +168,109 @@ const Deposit: React.FC = () => {
 
   const handleScannerConfirm = async () => {
     try {
-      // Update balances
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
-      // Get user's account
-      const { data: userAccount, error: accountError } = await supabase
+      // Get current account
+      const { data: currentAccount, error: accountError } = await supabase
         .from('accounts')
-        .select('id')
+        .select('id, account_number')
         .eq('email', user.email)
         .single();
 
       if (accountError) throw accountError;
 
-      // Update user's balance
-      const { error: updateError } = await supabase
+      // Get confirmer's account
+      const { data: confirmerAccountData, error: confirmerError } = await supabase
+        .from('accounts')
+        .select('id')
+        .eq('account_number', confirmerAccount)
+        .single();
+
+      if (confirmerError) throw confirmerError;
+
+      // Get current balances
+      const { data: receiverBalance, error: receiverBalanceError } = await supabase
         .from('balances')
-        .update({ available_balance: balance + parseFloat(depositAmount) })
-        .eq('account_id', userAccount.id);
+        .select('available_balance, total_balance')
+        .eq('account_id', currentAccount.id)
+        .single();
 
-      if (updateError) throw updateError;
+      if (receiverBalanceError) throw receiverBalanceError;
 
-      // Generate receipt data
+      const { data: confirmerBalance, error: confirmerBalanceError } = await supabase
+        .from('balances')
+        .select('available_balance, total_balance')
+        .eq('account_id', confirmerAccountData.id)
+        .single();
+
+      if (confirmerBalanceError) throw confirmerBalanceError;
+
+      // Validate confirmer's balance
+      if (confirmerBalance.available_balance < parseFloat(depositAmount)) {
+        throw new Error('Confirmer does not have enough balance');
+      }
+
+      // Calculate new balances
+      const newConfirmerBalance = confirmerBalance.available_balance - parseFloat(depositAmount);
+      const newReceiverBalance = receiverBalance.available_balance + parseFloat(depositAmount);
+
+      // Update confirmer's balance
+      const { error: confirmerUpdateError } = await supabase
+        .from('balances')
+        .update({ 
+          available_balance: newConfirmerBalance,
+          total_balance: newConfirmerBalance
+        })
+        .eq('account_id', confirmerAccountData.id);
+
+      if (confirmerUpdateError) throw confirmerUpdateError;
+
+      // Update receiver's balance
+      const { error: receiverUpdateError } = await supabase
+        .from('balances')
+        .update({ 
+          available_balance: newReceiverBalance,
+          total_balance: newReceiverBalance
+        })
+        .eq('account_id', currentAccount.id);
+
+      if (receiverUpdateError) throw receiverUpdateError;
+
+      // Create transaction record for confirmer
+      const { error: confirmerTransactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: confirmerAccountData.id,
+          amount: -parseFloat(depositAmount),
+          transaction_type: 'deposit',
+          description: `Deposit to ${currentAccount.account_number}`,
+          status: 'completed',
+          reference_id: otcReferenceNumber
+        });
+
+      if (confirmerTransactionError) throw confirmerTransactionError;
+
+      // Create transaction record for receiver
+      const { error: receiverTransactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: currentAccount.id,
+          amount: parseFloat(depositAmount),
+          transaction_type: 'deposit',
+          description: `Deposit from ${confirmerAccount}`,
+          status: 'completed',
+          reference_id: otcReferenceNumber
+        });
+
+      if (receiverTransactionError) throw receiverTransactionError;
+
+      // Update local state
+      setBalance(newReceiverBalance);
+      setShowScannerConfirmModal(false);
+      setShowReceipt(true);
+      
+      // Set receipt data
       const now = new Date();
       setReceiptData({
         date: now.toLocaleDateString(),
@@ -191,15 +279,64 @@ const Deposit: React.FC = () => {
         referenceNumber: otcReferenceNumber,
         status: 'Completed'
       });
-
-      // Show receipt and update status
-      setShowReceipt(true);
+      
+      // Reset states
+      setDepositAmount('');
+      setOtcReferenceNumber('');
       setIsOTCDepositComplete(true);
-      setShowScannerConfirmModal(false);
-      setShowConfirmationQR(true);
+      
+      // Refresh the page after successful transaction
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+      
     } catch (err) {
       console.error('Error confirming deposit:', err);
-      alert('Error confirming deposit. Please try again.');
+      alert(err instanceof Error ? err.message : 'Error confirming deposit. Please try again.');
+    }
+  };
+
+  const handleRefreshStatus = async () => {
+    try {
+      setIsRefreshing(true);
+      // Check if the transaction is completed
+      const { data: transaction, error } = await supabase
+        .from('transactions')
+        .select('status')
+        .eq('reference_number', otcReferenceNumber)
+        .single();
+
+      if (!error && transaction && transaction.status === 'completed') {
+        setShowOTCModal(false);
+        setShowReceipt(true);
+        setIsOTCDepositComplete(true);
+        // Refresh user data to update balance
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: account } = await supabase
+            .from('accounts')
+            .select('id')
+            .eq('email', user.email)
+            .single();
+          
+          if (account) {
+            const { data: balanceData } = await supabase
+              .from('balances')
+              .select('available_balance')
+              .eq('account_id', account.id)
+              .single();
+            
+            if (balanceData) {
+              setBalance(balanceData.available_balance);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing status:', err);
+      alert('Error refreshing transaction status. Please try again.');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -299,10 +436,10 @@ const Deposit: React.FC = () => {
               </div>
               <div className="flex justify-center mb-4">
                 <FaQrcode className="text-6xl text-black" />
-              </div>
+            </div>
               <div className="text-sm text-black text-center mb-4">
                 {isScanning ? 'Scan the other person\'s QR code' : 'Show your QR code to the other person'}
-              </div>
+          </div>
               <button
                 className="w-full bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
                 onClick={() => setIsScanning(!isScanning)}
@@ -321,7 +458,7 @@ const Deposit: React.FC = () => {
               className="w-full p-3 rounded-md bg-white text-black focus:outline-none border border-gray-300"
             >
               <option value="" disabled>Select Deposit Method</option>
-              <option value="bank">Bank Transfer</option>
+              <option value="bank" disabled>Bank Transfer (Currently Unavailable)</option>
               <option value="counter">Over the Counter</option>
             </select>
           </div>
@@ -348,7 +485,7 @@ const Deposit: React.FC = () => {
                     value={depositAmount}
                     onChange={(e) => setDepositAmount(e.target.value)}
                     placeholder="Enter amount"
-                    className="w-full p-3 rounded-md bg-gray-100 text-black focus:outline-none border border-gray-300"
+                    className="w-full p-3 rounded-md bg-white text-black focus:outline-none border border-gray-300"
                   />
                 </div>
               )}
@@ -363,18 +500,18 @@ const Deposit: React.FC = () => {
               >
                 Cancel
               </button>
-              <button
+            <button
                 className="bg-gray-700 text-white font-bold py-2 px-6 rounded-md"
                 onClick={handleConfirmDeposit}
                 disabled={selectedOption === 'counter' && !depositAmount}
-              >
+            >
                 Confirm
-              </button>
+            </button>
             </div>
           </div>
         </IonModal>
 
-        {/* OTC Deposit Modal - Updated to only show user's QR */}
+        {/* OTC Deposit Modal */}
         <IonModal isOpen={showOTCModal} onDidDismiss={() => {
           setShowOTCModal(false);
           setSelectedOption('');
@@ -435,7 +572,7 @@ const Deposit: React.FC = () => {
                       </div>
                     </div>
                   )}
-                </div>
+          </div>
 
                 <div className="bg-gray-100 p-4 rounded-md border border-gray-300">
                   <div className="font-bold text-black">Deposit Details</div>
@@ -462,17 +599,19 @@ const Deposit: React.FC = () => {
                 </div>
               </div>
             </div>
-            <button
-              className="mt-6 bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
-              onClick={() => {
-                setShowOTCModal(false);
-                setSelectedOption('');
-                setIsOTCDepositComplete(false);
-                setShowConfirmationQR(false);
-              }}
-            >
-              Close
-            </button>
+            <div className="flex flex-col space-y-4 w-full max-w-md">
+              <button
+                className="mt-6 bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
+                onClick={() => {
+                  setShowOTCModal(false);
+                  setSelectedOption('');
+                  setIsOTCDepositComplete(false);
+                  setShowConfirmationQR(false);
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </IonModal>
 
@@ -561,12 +700,12 @@ const Deposit: React.FC = () => {
               </div>
             </div>
             <div className="flex space-x-4">
-              <button
+            <button
                 className="bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
                 onClick={() => setShowReceipt(false)}
-              >
-                Close
-              </button>
+            >
+              Close
+            </button>
               <button
                 className="bg-gray-700 text-white font-bold py-2 px-6 rounded-md flex items-center"
                 onClick={saveReceipt}

@@ -1,10 +1,14 @@
 import { IonContent, IonPage, IonAlert, IonLoading, IonRefresher, IonRefresherContent, IonModal } from '@ionic/react';
-import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity, FaQrcode } from 'react-icons/fa';
+import { FaSignOutAlt, FaMoneyBillWave, FaWallet, FaExchangeAlt, FaCreditCard, FaChartLine, FaCog, FaUniversity, FaQrcode, FaStore, FaCopy, FaDownload } from 'react-icons/fa';
 import { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import bonkLogo from '/bonk.png';
 import { supabase } from '../../supabaseClient';
 import { handleLogout, resetSessionTimeout } from '../../utils/auth';
+import { QRCodeSVG } from 'qrcode.react';
+import { BrowserQRCodeReader } from '@zxing/browser';
+import { Camera, CameraResultType, CameraSource, CameraDirection } from '@capacitor/camera';
+import { Preferences } from '@capacitor/preferences';
 
 interface Transaction {
   id: string;
@@ -49,24 +53,56 @@ const Dashboard: React.FC = () => {
     const touchStartX = useRef<number | null>(null);
     const touchEndX = useRef<number | null>(null);
     const [showQRModal, setShowQRModal] = useState(false);
+    const [showScannerModal, setShowScannerModal] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+    const [isCameraReady, setIsCameraReady] = useState(false);
+    const [isMobileDevice, setIsMobileDevice] = useState(false);
+    const [showFileInput, setShowFileInput] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [scannedData, setScannedData] = useState<{
+        accountNumber: string;
+        amount: number;
+        referenceNumber: string;
+        balance: number;
+        type: 'deposit' | 'withdrawal' | 'transfer';
+    } | null>(null);
+    const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const codeReader = useRef<BrowserQRCodeReader | null>(null);
+    const hasScanned = useRef(false);
+    const [transactionDetails, setTransactionDetails] = useState<{
+        receiverAccountNumber: string;
+        receiverName: string;
+        amount: number;
+        description: string;
+        referenceNumber: string;
+        type: 'deposit' | 'withdrawal' | 'transfer';
+    } | null>(null);
+    const [qrData, setQrData] = useState<string | null>(null);
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [showTransferForm, setShowTransferForm] = useState(false);
+    const [transferAmount, setTransferAmount] = useState('');
+    const [transferDescription, setTransferDescription] = useState('');
 
     // Set up session timeout
     useEffect(() => {
-        resetSessionTimeout();
-
-        const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-        const resetTimeout = () => resetSessionTimeout();
-
-        activityEvents.forEach(event => {
-            window.addEventListener(event, resetTimeout);
-        });
-
-        return () => {
-            activityEvents.forEach(event => {
-                window.removeEventListener(event, resetTimeout);
-            });
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                history.push('/login');
+            }
         };
-    }, []);
+
+        // Check session immediately
+        checkSession();
+
+        // Set up interval to check session every minute
+        const interval = setInterval(checkSession, 60000);
+
+        return () => clearInterval(interval);
+    }, [history]);
 
     // Prevent going back to login
     useEffect(() => {
@@ -75,7 +111,7 @@ const Dashboard: React.FC = () => {
                 setShowBackAlert(true);
                 return false;
             }
-            return true;
+            return;
         });
 
         return () => unblock();
@@ -94,13 +130,35 @@ const Dashboard: React.FC = () => {
         return () => window.removeEventListener('popstate', handleBackButton);
     }, []);
 
+    useEffect(() => {
+        // Check if we're on a mobile device
+        const checkMobileDevice = () => {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            setIsMobileDevice(isMobile);
+            console.log('Device type:', isMobile ? 'Mobile' : 'Desktop');
+        };
+        
+        checkMobileDevice();
+        
+        // Add resize listener to update mobile detection on orientation change
+        window.addEventListener('resize', checkMobileDevice);
+        
+        return () => {
+            window.removeEventListener('resize', checkMobileDevice);
+        };
+    }, []);
+
     const fetchUserData = async () => {
         try {
             setLoading(true);
             setError(null);
 
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error('No user found');
+            if (!user) {
+                // If no user found, redirect to login
+                history.push('/login');
+                return;
+            }
 
             const { data: account, error: accountError } = await supabase
                 .from('accounts')
@@ -156,7 +214,11 @@ const Dashboard: React.FC = () => {
 
         } catch (err) {
             console.error('Error fetching user data:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load data');
+            if (err instanceof Error && err.message === 'No user found') {
+                history.push('/login');
+            } else {
+                setError(err instanceof Error ? err.message : 'Failed to load data');
+            }
         } finally {
             setLoading(false);
         }
@@ -176,6 +238,219 @@ const Dashboard: React.FC = () => {
             }, 500);
         }, 3000);
         return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        if (isScanning && videoRef.current && isCameraReady && !hasScanned.current) {
+            try {
+                console.log('Initializing QR scanner...');
+                codeReader.current = new BrowserQRCodeReader();
+                if (videoRef.current) {
+                    console.log('Starting QR code detection...');
+                    codeReader.current.decodeFromVideoDevice(
+                        undefined,
+                        videoRef.current,
+                        (result) => {
+                            if (result && !hasScanned.current) {
+                                console.log('QR Code detected:', result.getText());
+                                hasScanned.current = true;
+                                handleQRScan(result.getText());
+                                setIsScanning(false);
+                                setShowScannerModal(false);
+                            } else {
+                                console.log('Scanning for QR code...');
+                            }
+                        }
+                    );
+                }
+            } catch (err) {
+                console.error('Error initializing QR scanner:', err);
+                alert('Error initializing QR scanner. Please try again.');
+                setIsScanning(false);
+                setShowScannerModal(false);
+            }
+        }
+
+        return () => {
+            console.log('Cleaning up QR scanner...');
+            if (codeReader.current) {
+                codeReader.current = null;
+            }
+            if (videoRef.current && videoRef.current.srcObject) {
+                const stream = videoRef.current.srcObject as MediaStream;
+                stream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
+            hasScanned.current = false;
+        };
+    }, [isScanning, isCameraReady]);
+
+    const startCamera = async () => {
+        try {
+            console.log('Starting camera initialization...');
+            hasScanned.current = false;
+            
+            // Clean up any existing stream
+            if (videoRef.current && videoRef.current.srcObject) {
+                console.log('Cleaning up existing camera stream...');
+                const stream = videoRef.current.srcObject as MediaStream;
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('Stopped track:', track.label);
+                });
+                videoRef.current.srcObject = null;
+            }
+
+            // Reset QR code reader
+            if (codeReader.current) {
+                console.log('Resetting QR code reader...');
+                codeReader.current = null;
+            }
+
+            // Try different camera constraints
+            const constraints = [
+                {
+                    video: {
+                        facingMode: isMobileDevice ? 'environment' : 'user',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                },
+                {
+                    video: {
+                        facingMode: isMobileDevice ? 'environment' : 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                },
+                {
+                    video: {
+                        facingMode: isMobileDevice ? 'environment' : 'user'
+                    }
+                },
+                {
+                    video: true
+                }
+            ];
+
+            let stream;
+            let lastError;
+
+            // Try each constraint until one works
+            for (const constraint of constraints) {
+                try {
+                    console.log('Trying camera with constraints:', JSON.stringify(constraint));
+                    stream = await navigator.mediaDevices.getUserMedia(constraint);
+                    console.log('Camera access granted with constraints:', JSON.stringify(constraint));
+                    break;
+                } catch (err) {
+                    console.log('Failed with constraint:', JSON.stringify(constraint), err);
+                    lastError = err;
+                    // Clean up any partial stream
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                }
+            }
+
+            if (!stream) {
+                throw lastError || new Error('Failed to access camera with any constraints');
+            }
+
+            if (videoRef.current) {
+                console.log('Setting up video element...');
+                videoRef.current.srcObject = stream;
+                setIsCameraReady(true);
+                setIsScanning(true);
+
+                // Initialize QR code reader
+                console.log('Initializing QR code reader...');
+                codeReader.current = new BrowserQRCodeReader();
+                codeReader.current.decodeFromVideoDevice(
+                    undefined,
+                    videoRef.current,
+                    (result) => {
+                        if (result && !hasScanned.current) {
+                            console.log('QR Code detected:', result.getText());
+                            hasScanned.current = true;
+                            handleQRScan(result.getText());
+                            setIsScanning(false);
+                            setShowScannerModal(false);
+                        }
+                    }
+                );
+                console.log('QR code reader initialized and scanning started');
+            }
+        } catch (err) {
+            console.error('Error accessing camera:', err);
+            if (err instanceof Error) {
+                if (err.name === 'NotAllowedError') {
+                    console.error('Camera access was denied');
+                    alert('Camera access was denied. Please allow camera access in your device settings.');
+                    // Show file input option for mobile devices when camera access is denied
+                    if (isMobileDevice) {
+                        setShowFileInput(true);
+                    }
+                } else if (err.name === 'NotFoundError') {
+                    console.error('No camera found');
+                    alert('No camera found on this device.');
+                    // Show file input option for mobile devices when no camera is found
+                    if (isMobileDevice) {
+                        setShowFileInput(true);
+                    }
+                } else if (err.name === 'NotReadableError') {
+                    console.error('Camera is in use');
+                    // Try to force cleanup and retry
+                    if (videoRef.current && videoRef.current.srcObject) {
+                        const stream = videoRef.current.srcObject as MediaStream;
+                        stream.getTracks().forEach(track => {
+                            track.stop();
+                            console.log('Force stopped track:', track.label);
+                        });
+                        videoRef.current.srcObject = null;
+                    }
+                    alert('Camera access error. Please try again in a few seconds.');
+                    // Show file input option for mobile devices when camera is in use
+                    if (isMobileDevice) {
+                        setShowFileInput(true);
+                    }
+                } else {
+                    console.error('Unknown camera error:', err.message);
+                    alert('Error accessing camera: ' + err.message);
+                    // Show file input option for mobile devices on unknown errors
+                    if (isMobileDevice) {
+                        setShowFileInput(true);
+                    }
+                }
+            } else {
+                console.error('Unknown error occurred');
+                alert('An unknown error occurred while accessing the camera.');
+                // Show file input option for mobile devices on unknown errors
+                if (isMobileDevice) {
+                    setShowFileInput(true);
+                }
+            }
+            setIsScanning(false);
+        }
+    };
+
+    // Clean up camera resources when component unmounts
+    useEffect(() => {
+        return () => {
+            console.log('Cleaning up camera resources...');
+            if (codeReader.current) {
+                codeReader.current = null;
+            }
+            if (videoRef.current && videoRef.current.srcObject) {
+                const stream = videoRef.current.srcObject as MediaStream;
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('Stopped track:', track.label);
+                });
+                videoRef.current.srcObject = null;
+            }
+            hasScanned.current = false;
+        };
     }, []);
 
     const handleLogoutClick = async () => {
@@ -201,8 +476,9 @@ const Dashboard: React.FC = () => {
 
     const formatTransactionAmount = (amount: number, type: string) => {
         const formattedAmount = formatCurrency(Math.abs(amount));
-        if (type === 'deposit') return `+${formattedAmount}`;
-        if (type === 'withdrawal') return `-${formattedAmount}`;
+        if (type === 'deposit') return `-${formattedAmount}`;
+        if (type === 'withdrawal') return `+${formattedAmount}`;
+        if (type === 'transfer') return amount > 0 ? `+${formattedAmount}` : `-${formattedAmount}`;
         return amount > 0 ? `+${formattedAmount}` : `-${formattedAmount}`;
     };
 
@@ -243,6 +519,447 @@ const Dashboard: React.FC = () => {
             setError(err instanceof Error ? err.message : 'Failed to refresh data');
         } finally {
             event.detail.complete();
+        }
+    };
+
+    const handleQRScan = async (result: string) => {
+        try {
+            if (!result) return;
+
+            const scannedData = JSON.parse(result);
+            const { accountNumber, referenceNumber, type, amount, description } = scannedData;
+
+            // Determine transaction type based on reference number
+            let transactionType: 'deposit' | 'withdrawal' | 'transfer';
+            
+            // Check if reference number starts with OTCW or OTCD
+            if (referenceNumber && typeof referenceNumber === 'string') {
+                if (referenceNumber.startsWith('OTCW')) {
+                    transactionType = 'withdrawal';
+                } else if (referenceNumber.startsWith('OTCD')) {
+                    transactionType = 'deposit';
+                } else {
+                    // For transfers, use the type from the QR code or default to 'transfer'
+                    transactionType = type && ['deposit', 'withdrawal', 'transfer'].includes(type) 
+                        ? type as 'deposit' | 'withdrawal' | 'transfer' 
+                        : 'transfer';
+                }
+            } else {
+                // For transfers, use the type from the QR code or default to 'transfer'
+                transactionType = type && ['deposit', 'withdrawal', 'transfer'].includes(type) 
+                    ? type as 'deposit' | 'withdrawal' | 'transfer' 
+                    : 'transfer';
+            }
+
+            // Validate account number
+            if (!accountNumber) {
+                throw new Error('Invalid QR code: Missing account number');
+            }
+
+            // Get receiver's account
+            const { data: receiverAccount, error: receiverError } = await supabase
+                .from('accounts')
+                .select('*')
+                .eq('account_number', accountNumber)
+                .single();
+
+            if (receiverError || !receiverAccount) {
+                throw new Error('Receiver account not found');
+            }
+
+            // For withdrawals, check if the scanned account has sufficient balance
+            if (transactionType === 'withdrawal') {
+                if (receiverAccount.available_balance < parseFloat(amount || '0')) {
+                    throw new Error('Insufficient balance for withdrawal');
+                }
+            }
+
+            // Generate a proper reference number for transfers if not provided
+            let finalReferenceNumber = referenceNumber;
+            if (transactionType === 'transfer' && (!referenceNumber || !referenceNumber.startsWith('TRF'))) {
+                // Generate a transfer reference number with TRF prefix
+                finalReferenceNumber = `TRF-${Math.floor(100000 + Math.random() * 900000)}`;
+            }
+
+            // Set transaction details
+            setTransactionDetails({
+                receiverAccountNumber: accountNumber,
+                receiverName: receiverAccount.account_name,
+                amount: parseFloat(amount || '0'),
+                description: description || '',
+                referenceNumber: finalReferenceNumber,
+                type: transactionType
+            });
+
+            // Close scanner and show confirmation or transfer form
+            setShowScannerModal(false);
+            
+            if (transactionType === 'transfer') {
+                // For transfers, show the form to enter amount and description
+                setShowTransferForm(true);
+            } else {
+                // For deposits and withdrawals, show confirmation directly
+                setShowConfirmationModal(true);
+            }
+
+        } catch (error) {
+            console.error('QR scan error:', error);
+            setError(error instanceof Error ? error.message : 'Failed to process QR code');
+            setShowScannerModal(false);
+            setShowErrorModal(true);
+        }
+    };
+
+    const handleTransferSubmit = () => {
+        if (!transferAmount || parseFloat(transferAmount) <= 0) {
+            setError('Please enter a valid amount');
+            setShowErrorModal(true);
+            return;
+        }
+        
+        // Generate a proper reference number for transfers if not already set
+        let finalReferenceNumber = transactionDetails?.referenceNumber;
+        if (!finalReferenceNumber || !finalReferenceNumber.startsWith('TRF')) {
+            finalReferenceNumber = `TRF-${Math.floor(100000 + Math.random() * 900000)}`;
+        }
+        
+        // Update transaction details with the entered amount and description
+        if (transactionDetails) {
+            setTransactionDetails({
+                ...transactionDetails,
+                amount: parseFloat(transferAmount),
+                description: transferDescription || 'Transfer',
+                referenceNumber: finalReferenceNumber
+            });
+        }
+        
+        // Close transfer form and show confirmation
+        setShowTransferForm(false);
+        setShowConfirmationModal(true);
+    };
+
+    const handleRefreshTransaction = async () => {
+        try {
+            setIsRefreshing(true);
+            
+            // Get current user's account
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('No user found');
+
+            const { data: currentAccount, error: accountError } = await supabase
+                .from('accounts')
+                .select('id, account_number')
+                .eq('email', user.email)
+                .single();
+
+            if (accountError) throw accountError;
+
+            // Check if the transaction is completed
+            if (transactionDetails) {
+                const { data: transaction, error } = await supabase
+                    .from('transactions')
+                    .select('status, amount, transaction_type')
+                    .eq('reference_id', transactionDetails.referenceNumber)
+                    .single();
+
+                if (!error && transaction) {
+                    if (transaction.status === 'completed') {
+                        // Transaction is completed, show success modal
+                        setShowConfirmationModal(false);
+                        setShowSuccessModal(true);
+                        
+                        // Update local balance
+                        const { data: balanceData, error: balanceError } = await supabase
+                            .from('balances')
+                            .select('available_balance, total_balance')
+                            .eq('account_id', currentAccount.id)
+                            .single();
+                            
+                        if (!balanceError && balanceData) {
+                            setBalance(balanceData.available_balance);
+                        }
+                        
+                        // Reset transaction details
+                        setTransactionDetails(null);
+                        setQrData(null);
+                        
+                        // Refresh the page after a short delay
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+                    } else {
+                        // Transaction is still pending, show appropriate message
+                        alert('Transaction is still processing. Please try again in a few moments.');
+                    }
+                } else {
+                    // Transaction not found, it might still be processing
+                    alert('Transaction status not found. Please try again in a few moments.');
+                }
+            }
+        } catch (err) {
+            console.error('Error refreshing transaction:', err);
+            alert('Error refreshing transaction status. Please try again.');
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
+    const handleConfirmTransaction = async () => {
+        try {
+            if (!transactionDetails) return;
+
+            // Get current user's account
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('No user found');
+
+            const { data: currentAccount, error: accountError } = await supabase
+                .from('accounts')
+                .select('id, account_number')
+                .eq('email', user.email)
+                .single();
+
+            if (accountError) throw accountError;
+
+            // Get receiver's account
+            const { data: receiverAccount, error: receiverError } = await supabase
+                .from('accounts')
+                .select('id')
+                .eq('account_number', transactionDetails.receiverAccountNumber)
+                .single();
+
+            if (receiverError) throw receiverError;
+
+            // Get current balances
+            const { data: senderBalance, error: senderBalanceError } = await supabase
+                .from('balances')
+                .select('available_balance, total_balance')
+                .eq('account_id', currentAccount.id)
+                .single();
+
+            if (senderBalanceError) throw senderBalanceError;
+
+            const { data: receiverBalance, error: receiverBalanceError } = await supabase
+                .from('balances')
+                .select('available_balance, total_balance')
+                .eq('account_id', receiverAccount.id)
+                .single();
+
+            if (receiverBalanceError) throw receiverBalanceError;
+
+            // For withdrawals, the scanned account (receiver) is the one giving money to the scanner (sender)
+            if (transactionDetails.type === 'withdrawal') {
+                // Validate receiver's balance for withdrawal
+                if (receiverBalance.available_balance < transactionDetails.amount) {
+                    throw new Error('Insufficient balance for withdrawal');
+                }
+
+                // Calculate new balances for withdrawal
+                const newReceiverBalance = receiverBalance.available_balance - transactionDetails.amount;
+                const newSenderBalance = senderBalance.available_balance + transactionDetails.amount;
+
+                // Update receiver's balance (the one being withdrawn from)
+                const { error: receiverUpdateError } = await supabase
+                    .from('balances')
+                    .update({ 
+                        available_balance: newReceiverBalance,
+                        total_balance: newReceiverBalance
+                    })
+                    .eq('account_id', receiverAccount.id);
+
+                if (receiverUpdateError) throw receiverUpdateError;
+
+                // Update sender's balance (the one receiving the withdrawal)
+                const { error: senderUpdateError } = await supabase
+                    .from('balances')
+                    .update({ 
+                        available_balance: newSenderBalance,
+                        total_balance: newSenderBalance
+                    })
+                    .eq('account_id', currentAccount.id);
+
+                if (senderUpdateError) throw senderUpdateError;
+
+                // Create transaction record for receiver (the one being withdrawn from)
+                const { error: receiverTransactionError } = await supabase
+                    .from('transactions')
+                    .insert({
+                        account_id: receiverAccount.id,
+                        amount: -transactionDetails.amount,
+                        transaction_type: 'withdrawal',
+                        description: `Withdrawal to ${currentAccount.account_number}`,
+                        status: 'completed',
+                        reference_id: transactionDetails.referenceNumber
+                    });
+
+                if (receiverTransactionError) throw receiverTransactionError;
+
+                // Create transaction record for sender (the one receiving the withdrawal)
+                const { error: senderTransactionError } = await supabase
+                    .from('transactions')
+                    .insert({
+                        account_id: currentAccount.id,
+                        amount: transactionDetails.amount,
+                        transaction_type: 'withdrawal',
+                        description: `Withdrawal from ${receiverAccount.id}`,
+                        status: 'completed',
+                        reference_id: transactionDetails.referenceNumber
+                    });
+
+                if (senderTransactionError) throw senderTransactionError;
+
+                // Update local state with new balance
+                setBalance(newSenderBalance);
+            } else {
+                // Handle deposits and transfers as before
+                // Validate sender's balance
+                if (senderBalance.available_balance < transactionDetails.amount) {
+                    throw new Error('Insufficient balance for this transaction');
+                }
+
+                // Calculate new balances
+                const newSenderBalance = senderBalance.available_balance - transactionDetails.amount;
+                const newReceiverBalance = receiverBalance.available_balance + transactionDetails.amount;
+
+                // Update sender's balance
+                const { error: senderUpdateError } = await supabase
+                    .from('balances')
+                    .update({ 
+                        available_balance: newSenderBalance,
+                        total_balance: newSenderBalance
+                    })
+                    .eq('account_id', currentAccount.id);
+
+                if (senderUpdateError) throw senderUpdateError;
+
+                // Update receiver's balance
+                const { error: receiverUpdateError } = await supabase
+                    .from('balances')
+                    .update({ 
+                        available_balance: newReceiverBalance,
+                        total_balance: newReceiverBalance
+                    })
+                    .eq('account_id', receiverAccount.id);
+
+                if (receiverUpdateError) throw receiverUpdateError;
+
+                // Create transaction record for sender
+                const { error: senderTransactionError } = await supabase
+                    .from('transactions')
+                    .insert({
+                        account_id: currentAccount.id,
+                        amount: -transactionDetails.amount,
+                        transaction_type: transactionDetails.type,
+                        description: `${transactionDetails.type === 'deposit' ? 'Deposit to' : 'Transfer to'} ${transactionDetails.receiverAccountNumber}`,
+                        status: 'completed',
+                        reference_id: transactionDetails.referenceNumber
+                    });
+
+                if (senderTransactionError) throw senderTransactionError;
+
+                // Create transaction record for receiver
+                const { error: receiverTransactionError } = await supabase
+                    .from('transactions')
+                    .insert({
+                        account_id: receiverAccount.id,
+                        amount: transactionDetails.amount,
+                        transaction_type: transactionDetails.type,
+                        description: `${transactionDetails.type === 'deposit' ? 'Deposit from' : 'Transfer from'} ${currentAccount.account_number}`,
+                        status: 'completed',
+                        reference_id: transactionDetails.referenceNumber
+                    });
+
+                if (receiverTransactionError) throw receiverTransactionError;
+
+                // Update local state with new balance
+                setBalance(newSenderBalance);
+            }
+
+            // Show success modal
+            setShowConfirmationModal(false);
+            setShowSuccessModal(true);
+            setTransactionDetails(null);
+            setQrData(null);
+            
+            // Refresh the page after successful transaction
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+            
+        } catch (err) {
+            console.error('Error confirming transaction:', err);
+            alert(err instanceof Error ? err.message : 'Error confirming transaction. Please try again.');
+        }
+    };
+
+    const handleCancelTransaction = async () => {
+        try {
+            // Clean up camera resources
+            if (videoRef.current) {
+                const stream = videoRef.current.srcObject as MediaStream;
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                videoRef.current.srcObject = null;
+            }
+
+            // Reset states
+            setShowConfirmationModal(false);
+            setShowTransferForm(false);
+            setShowScannerModal(false);
+            setIsCameraReady(false);
+            setIsScanning(false);
+            setTransactionDetails(null);
+            setQrData(null);
+            setTransferAmount('');
+            setTransferDescription('');
+
+            // Refresh the page after cancelling transaction
+            window.location.reload();
+
+        } catch (error) {
+            console.error('Error cancelling transaction:', error);
+            setError('Failed to cancel transaction');
+            setShowErrorModal(true);
+        }
+    };
+
+    // Handle file input for QR code images
+    const handleFileInput = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        try {
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            // Create a new QR code reader
+            const reader = new BrowserQRCodeReader();
+            
+            // Read the file as a data URL
+            const reader2 = new FileReader();
+            reader2.onload = async (e) => {
+                if (!e.target?.result) return;
+                
+                try {
+                    // Decode the QR code from the image
+                    const result = await reader.decodeFromImageUrl(e.target.result as string);
+                    if (result) {
+                        console.log('QR Code detected from image:', result.getText());
+                        handleQRScan(result.getText());
+                        setShowScannerModal(false);
+                    }
+                } catch (err) {
+                    console.error('Error decoding QR code from image:', err);
+                    alert('Could not detect a valid QR code in the image. Please try another image.');
+                } finally {
+                    // Reset the file input
+                    if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                    }
+                }
+            };
+            
+            reader2.readAsDataURL(file);
+        } catch (err) {
+            console.error('Error processing file:', err);
+            alert('Error processing the image. Please try another image.');
         }
     };
 
@@ -293,24 +1010,30 @@ const Dashboard: React.FC = () => {
                         refreshingSpinner="lines"
                         pullingText="Pull to refresh"
                         refreshingText="Refreshing..."
+                        style={{
+                            '--background': 'transparent',
+                            '--color': 'black',
+                            '--height': '60px',
+                            '--margin-top': '0px'
+                        }}
                     />
                 </IonRefresher>
 
                 {/* Header */}
-                <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-16">
+                <div className="flex justify-center items-center p-4 bg-[#5EC95F] relative h-20 shadow-md sticky top-0 z-50">
                     <FaSignOutAlt
-                        className="text-black text-2xl absolute left-4 cursor-pointer"
+                        className="text-black text-2xl absolute left-4 cursor-pointer hover:scale-110 transition-transform"
                         onClick={() => setShowLogoutAlert(true)}
                     />
-                    <img src="/bonk.png" alt="Bonk Logo" className="h-12 w-auto" />
+                    <img src="/bonk.png" alt="Bonk Logo" className="h-16 w-auto drop-shadow-lg" />
                 </div>
 
                 {/* Main Content */}
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col min-h-screen pt-4">
                     {/* Welcome Section */}
-                    <div className="flex flex-col items-center mt-2 px-4">
+                    <div className="flex flex-col items-center px-4 space-y-4">
                         {/* Profile and Settings */}
-                        <div className="w-full max-w-md flex items-center space-x-4">
+                        <div className="w-full max-w-md flex items-center space-x-4 bg-white p-4 rounded-lg shadow-md">
                             <div className="h-16 w-16 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
                                 <img 
                                     src={profileImage} 
@@ -327,18 +1050,18 @@ const Dashboard: React.FC = () => {
                                     {firstName}
                                 </span>
                             </span>
-                            <FaCog className="text-3xl text-black cursor-pointer ml-auto" onClick={() => history.push('/settings')} />
+                            <FaCog className="text-3xl text-black cursor-pointer ml-auto hover:scale-110 transition-transform" onClick={() => history.push('/settings')} />
                         </div>
 
                         {/* Balance Card */}
-                        <div className="mt-4 w-full max-w-md p-4 bg-white rounded-lg shadow-md flex items-center">
+                        <div className="w-full max-w-md p-4 bg-white rounded-lg shadow-md flex items-center">
                             <div className="flex-1">
                                 <span className="text-lg text-gray-600">Account Balance</span>
                                 <div className="text-2xl font-bold text-black">{formatCurrency(balance)}</div>
                                 <div className="text-sm text-gray-500 mt-1">Account: {accountNumber}</div>
                             </div>
                             <button 
-                                className="h-12 w-12 bg-[#5EC95F] text-white rounded-full flex items-center justify-center shadow-md text-2xl"
+                                className="h-12 w-12 bg-[#5EC95F] text-white rounded-full flex items-center justify-center shadow-md text-2xl hover:scale-110 transition-transform"
                                 onClick={() => history.push('/deposit')}
                             >
                                 +
@@ -347,8 +1070,8 @@ const Dashboard: React.FC = () => {
                     </div>
 
                     {/* Action Buttons Grid */}
-                    <div className="mt-2 px-4" style={{ height: '30%' }}>
-                        <div className="bg-white rounded-lg shadow-md p-2 grid grid-cols-3 gap-2 h-full">
+                    <div className="mt-4 px-4">
+                        <div className="bg-white rounded-lg shadow-md p-4 grid grid-cols-3 gap-4">
                             {[ 
                                 { icon: <FaMoneyBillWave className="text-2xl text-black" />, label: "Deposit", action: () => history.push('/deposit') },
                                 { icon: <FaWallet className="text-2xl text-black" />, label: "Withdraw", action: () => history.push('/withdraw') },
@@ -359,18 +1082,18 @@ const Dashboard: React.FC = () => {
                             ].map((item, index) => (
                                 <button 
                                     key={index}
-                                    className="h-full bg-gray-100 rounded-lg flex flex-col items-center justify-center p-1 hover:bg-gray-200 transition-colors"
+                                    className="h-24 bg-gray-100 rounded-lg flex flex-col items-center justify-center p-2 hover:bg-gray-200 transition-colors hover:scale-105"
                                     onClick={item.action}
                                 >
                                     {item.icon}
-                                    <span className="text-xs mt-1 text-black font-medium">{item.label}</span>
+                                    <span className="text-xs mt-2 text-black font-medium">{item.label}</span>
                                 </button>
                             ))}
                         </div>
                     </div>
 
                     {/* Ad Banner */}
-                    <div className="px-4 pb-2">
+                    <div className="px-4 py-4">
                         <img 
                             src={adImages[currentAdIndex]} 
                             alt="Advertisement"
@@ -381,11 +1104,11 @@ const Dashboard: React.FC = () => {
                     </div>
 
                     {/* Transaction History Panel */}
-                    <div className="bg-white rounded-t-xl shadow-lg p-4">
-                        <div className="flex justify-between items-center mb-2">
+                    <div className="bg-white rounded-t-xl shadow-lg p-4 mt-auto">
+                        <div className="flex justify-between items-center mb-4">
                             <h3 className="font-bold text-black text-lg">Recent Transactions</h3>
                             <button 
-                                className="text-blue-500 text-md font-medium"
+                                className="text-blue-500 text-md font-medium hover:underline"
                                 onClick={() => history.push('/transactions')}
                             >
                                 See More
@@ -397,7 +1120,7 @@ const Dashboard: React.FC = () => {
                             </div>
                         ) : (
                             transactions.map((transaction) => (
-                                <div key={transaction.id} className="flex justify-between items-center p-3 bg-gray-50 rounded mb-2">
+                                <div key={transaction.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg mb-3 hover:bg-gray-100 transition-colors">
                                     <div>
                                         <span className="text-md text-gray-600">{transaction.description}</span>
                                         <div className="text-xs text-gray-400">
@@ -405,8 +1128,8 @@ const Dashboard: React.FC = () => {
                                         </div>
                                     </div>
                                     <span className={`text-md font-bold ${
-                                        transaction.transaction_type === 'deposit' ? 'text-green-500' : 
-                                        transaction.transaction_type === 'withdrawal' ? 'text-red-500' : 
+                                        transaction.transaction_type === 'deposit' ? 'text-red-500' : 
+                                        transaction.transaction_type === 'withdrawal' ? 'text-green-500' : 
                                         transaction.amount > 0 ? 'text-green-500' : 'text-red-500'
                                     }`}>
                                         {formatTransactionAmount(transaction.amount, transaction.transaction_type)}
@@ -467,32 +1190,364 @@ const Dashboard: React.FC = () => {
                 {/* Sticky QR Scan Button */}
                 <div className="fixed bottom-6 right-6 z-50">
                     <button
-                        onClick={() => setShowQRModal(true)}
-                        className="bg-gray-800 text-white p-4 rounded-full shadow-lg hover:bg-gray-700 transition-colors"
+                        onClick={() => {
+                            setShowScannerModal(true);
+                            setIsCameraReady(false);
+                            setIsScanning(false);
+                        }}
+                        className="bg-gray-800 text-white p-4 rounded-full shadow-lg hover:bg-gray-700 transition-colors hover:scale-110"
                     >
                         <FaQrcode className="text-2xl" />
                     </button>
                 </div>
 
-                {/* QR Scan Modal */}
-                <IonModal isOpen={showQRModal} onDidDismiss={() => setShowQRModal(false)}>
+                {/* Transfer Form Modal */}
+                <IonModal isOpen={showTransferForm} onDidDismiss={() => {
+                    setShowTransferForm(false);
+                    setTransferAmount('');
+                    setTransferDescription('');
+                }}>
                     <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
-                        <h2 className="text-xl font-bold text-black mb-4">Scan QR Code</h2>
-                        <div className="bg-gray-100 p-4 rounded-md border border-gray-300 w-full max-w-md">
-                            <div className="flex justify-center mb-4">
-                                <FaQrcode className="text-6xl text-black" />
+                        <h2 className="text-2xl font-bold text-black mb-4">Enter Transfer Details</h2>
+                        {transactionDetails && (
+                            <div className="w-full max-w-md bg-gray-50 p-4 rounded-lg mb-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Type:</span>
+                                        <span className="font-medium text-black capitalize">{transactionDetails.type}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Account Number:</span>
+                                        <span className="font-medium text-black">{transactionDetails.receiverAccountNumber}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Account Name:</span>
+                                        <span className="font-medium text-black">{transactionDetails.receiverName}</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div className="text-sm text-black text-center mb-4">
-                                Position the QR code within the frame to scan
+                        )}
+                        <div className="w-full max-w-md space-y-4">
+                            <div>
+                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="amount">
+                                    Amount
+                                </label>
+                                <input
+                                    id="amount"
+                                    type="number"
+                                    value={transferAmount}
+                                    onChange={(e) => setTransferAmount(e.target.value)}
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-black bg-white leading-tight focus:outline-none focus:shadow-outline"
+                                    placeholder="Enter amount"
+                                />
                             </div>
-                            {/* Add your QR scanner component here */}
+                            <div>
+                                <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">
+                                    Description (Optional)
+                                </label>
+                                <input
+                                    id="description"
+                                    type="text"
+                                    value={transferDescription}
+                                    onChange={(e) => setTransferDescription(e.target.value)}
+                                    className="shadow appearance-none border rounded w-full py-2 px-3 text-black bg-white leading-tight focus:outline-none focus:shadow-outline"
+                                    placeholder="Enter description"
+                                />
+                            </div>
+                            <div className="flex space-x-4">
+                                <button
+                                    className="flex-1 bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md"
+                                    onClick={handleTransferSubmit}
+                                >
+                                    Continue
+                                </button>
+                                <button
+                                    className="flex-1 bg-gray-600 text-white font-bold py-3 px-8 rounded-md"
+                                    onClick={() => {
+                                        setShowTransferForm(false);
+                                        setTransferAmount('');
+                                        setTransferDescription('');
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
+                    </div>
+                </IonModal>
+
+                {/* Confirmation Modal */}
+                <IonModal isOpen={showConfirmationModal} onDidDismiss={() => {
+                    setShowConfirmationModal(false);
+                    setTransactionDetails(null);
+                    setQrData(null);
+                    setTransferAmount('');
+                    setTransferDescription('');
+                }}>
+                    <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
+                        <h2 className="text-2xl font-bold text-black mb-4">Confirm Transaction</h2>
+                        {transactionDetails && (
+                            <div className="w-full max-w-md bg-gray-50 p-4 rounded-lg">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Type:</span>
+                                        <span className="font-medium text-black capitalize">{transactionDetails.type}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Account Number:</span>
+                                        <span className="font-medium text-black">{transactionDetails.receiverAccountNumber}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Account Name:</span>
+                                        <span className="font-medium text-black">{transactionDetails.receiverName}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Amount:</span>
+                                        <span className="font-medium text-black">{formatCurrency(transactionDetails.amount)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Description:</span>
+                                        <span className="font-medium text-black">{transactionDetails.description || 'N/A'}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Reference Number:</span>
+                                        <span className="font-medium text-black">{transactionDetails.referenceNumber}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex flex-col space-y-4 w-full max-w-md">
+                            <button
+                                className="bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md"
+                                onClick={handleConfirmTransaction}
+                            >
+                                Confirm
+                            </button>
+                            <button
+                                className="bg-gray-600 text-white font-bold py-3 px-8 rounded-md"
+                                onClick={() => {
+                                    // Simply close the modal and refresh the page
+                                    setShowConfirmationModal(false);
+                                    setTransactionDetails(null);
+                                    setQrData(null);
+                                    setTransferAmount('');
+                                    setTransferDescription('');
+                                    window.location.reload();
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="bg-blue-500 text-white font-bold py-3 px-8 rounded-md flex items-center justify-center space-x-2"
+                                onClick={handleRefreshTransaction}
+                                disabled={isRefreshing}
+                            >
+                                {isRefreshing ? (
+                                    <>
+                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span>Refreshing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <span>Refresh Status</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </IonModal>
+
+                {/* Success Modal */}
+                <IonModal isOpen={showSuccessModal} onDidDismiss={() => {
+                    setShowSuccessModal(false);
+                    setShowScannerModal(false);
+                    setTransferAmount('');
+                    setTransferDescription('');
+                }}>
+                    <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
+                        <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                            <svg className="w-16 h-16 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold text-black">Transaction Completed</h2>
+                        <p className="text-gray-600 text-center">Your transaction has been successfully processed.</p>
                         <button
-                            className="bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
-                            onClick={() => setShowQRModal(false)}
+                            className="bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md w-full max-w-md"
+                            onClick={() => {
+                                setShowSuccessModal(false);
+                                setShowScannerModal(false);
+                                setTransferAmount('');
+                                setTransferDescription('');
+                                window.location.reload();
+                            }}
+                        >
+                            Return to Dashboard
+                        </button>
+                    </div>
+                </IonModal>
+
+                {/* Error Modal */}
+                <IonModal isOpen={showErrorModal} onDidDismiss={() => {
+                    setShowErrorModal(false);
+                    setError(null);
+                }}>
+                    <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
+                        <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                            <svg className="w-16 h-16 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold text-black">Error</h2>
+                        <p className="text-gray-600 text-center">{error}</p>
+                        <button
+                            className="bg-gray-600 text-white font-bold py-3 px-8 rounded-md w-full max-w-md"
+                            onClick={() => {
+                                setShowErrorModal(false);
+                                setError(null);
+                            }}
                         >
                             Close
                         </button>
+                    </div>
+                </IonModal>
+
+                {/* Scanner Modal */}
+                <IonModal isOpen={showScannerModal} onDidDismiss={() => {
+                    console.log('Scanner modal closed, cleaning up...');
+                    setShowScannerModal(false);
+                    setIsScanning(false);
+                    setIsCameraReady(false);
+                    setShowFileInput(false);
+                    
+                    // Stop QR code scanning
+                    if (codeReader.current) {
+                        console.log('Stopping QR code reader...');
+                        codeReader.current = null;
+                    }
+                    
+                    // Clean up camera resources
+                    if (videoRef.current && videoRef.current.srcObject) {
+                        const stream = videoRef.current.srcObject as MediaStream;
+                        stream.getTracks().forEach(track => {
+                            track.stop();
+                            console.log('Stopped track:', track.label);
+                        });
+                        videoRef.current.srcObject = null;
+                    }
+                    
+                    // Reset scan flag
+                    hasScanned.current = false;
+                }}>
+                    <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
+                        {!showFileInput ? (
+                            <>
+                                <div className="flex justify-center mb-4 w-full h-[60vh]">
+                                    <video
+                                        ref={videoRef}
+                                        className="w-full h-full object-cover rounded-lg"
+                                        autoPlay
+                                        playsInline
+                                        muted
+                                    />
+                                </div>
+                                <div className="text-sm text-black mb-4 text-center">
+                                    Position the QR code within the frame
+                                </div>
+                                <div className="flex space-x-4 w-full max-w-md">
+                                    <button
+                                        className="flex-1 bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md"
+                                        onClick={startCamera}
+                                    >
+                                        Start Scan
+                                    </button>
+                                    <button
+                                        className="flex-1 bg-gray-600 text-white font-bold py-3 px-8 rounded-md"
+                                        onClick={() => {
+                                            console.log('Cancel button clicked, cleaning up...');
+                                            setShowScannerModal(false);
+                                            setIsScanning(false);
+                                            setIsCameraReady(false);
+                                            
+                                            // Stop QR code scanning
+                                            if (codeReader.current) {
+                                                console.log('Stopping QR code reader...');
+                                                codeReader.current = null;
+                                            }
+                                            
+                                            // Clean up camera resources
+                                            if (videoRef.current && videoRef.current.srcObject) {
+                                                const stream = videoRef.current.srcObject as MediaStream;
+                                                stream.getTracks().forEach(track => {
+                                                    track.stop();
+                                                });
+                                                videoRef.current.srcObject = null;
+                                            }
+                                            
+                                            // Reset scan flag
+                                            hasScanned.current = false;
+                                        }}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                                {isMobileDevice && (
+                                    <div className="mt-4 w-full max-w-md">
+                                        <button
+                                            className="w-full bg-blue-500 text-white font-bold py-3 px-8 rounded-md"
+                                            onClick={() => setShowFileInput(true)}
+                                        >
+                                            Upload QR Image Instead
+                                        </button>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <div className="flex flex-col items-center justify-center w-full h-[60vh] bg-gray-100 rounded-lg mb-4">
+                                    <FaQrcode className="text-6xl text-gray-400 mb-4" />
+                                    <p className="text-black text-center mb-4">
+                                        Upload an image containing a QR code
+                                    </p>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleFileInput}
+                                        ref={fileInputRef}
+                                        className="hidden"
+                                    />
+                                    <button
+                                        className="bg-blue-500 text-white font-bold py-3 px-8 rounded-md mb-4"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        Select Image
+                                    </button>
+                                </div>
+                                <div className="flex space-x-4 w-full max-w-md">
+                                    <button
+                                        className="flex-1 bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md"
+                                        onClick={() => setShowFileInput(false)}
+                                    >
+                                        Use Camera
+                                    </button>
+                                    <button
+                                        className="flex-1 bg-gray-600 text-white font-bold py-3 px-8 rounded-md"
+                                        onClick={() => {
+                                            setShowScannerModal(false);
+                                            setShowFileInput(false);
+                                        }}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </IonModal>
             </IonContent>

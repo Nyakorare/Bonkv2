@@ -1,9 +1,11 @@
-import { IonContent, IonPage, IonAlert } from '@ionic/react';
-import { FaArrowLeft, FaUser, FaLock, FaCamera, FaSignOutAlt } from 'react-icons/fa';
+import { IonContent, IonPage, IonAlert, IonToggle } from '@ionic/react';
+import { FaArrowLeft, FaUser, FaLock, FaCamera, FaSignOutAlt, FaBell, FaShieldAlt } from 'react-icons/fa';
 import { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
 import { handleLogout, resetSessionTimeout } from '../../utils/auth';
+import { Camera } from '@capacitor/camera';
+import { Preferences } from '@capacitor/preferences';
 
 const Settings: React.FC = () => {
     const history = useHistory();
@@ -20,6 +22,11 @@ const Settings: React.FC = () => {
     const [showLogoutAlert, setShowLogoutAlert] = useState(false);
     const [showSuccessAlert, setShowSuccessAlert] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [activeTab, setActiveTab] = useState<'profile' | 'permissions'>('profile');
+    const [permissions, setPermissions] = useState({
+        camera: false,
+        notifications: false
+    });
 
     // Set up session timeout
     useEffect(() => {
@@ -69,6 +76,12 @@ const Settings: React.FC = () => {
                 setProfile(profile);
                 setUsername(user.email || '');
                 setFullName(`${profile.first_name} ${profile.last_name}`);
+
+                // Load saved permissions
+                const { value: savedPermissions } = await Preferences.get({ key: 'permissions' });
+                if (savedPermissions) {
+                    setPermissions(JSON.parse(savedPermissions));
+                }
             } catch (err) {
                 console.error('Error fetching user data:', err);
                 setError('Failed to load user data');
@@ -135,6 +148,35 @@ const Settings: React.FC = () => {
             setError(err instanceof Error ? err.message : 'Failed to upload image');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handlePermissionChange = async (permission: 'camera' | 'notifications') => {
+        try {
+            if (permission === 'camera') {
+                const { camera } = await Camera.checkPermissions();
+                if (camera === 'prompt') {
+                    const { camera: newPermission } = await Camera.requestPermissions();
+                    setPermissions(prev => ({ ...prev, camera: newPermission === 'granted' }));
+                } else if (camera === 'granted') {
+                    setPermissions(prev => ({ ...prev, camera: true }));
+                } else {
+                    setPermissions(prev => ({ ...prev, camera: false }));
+                }
+            } else if (permission === 'notifications') {
+                // For notifications, we'll just toggle the state for now
+                // In a real app, you would implement actual notification permission handling
+                setPermissions(prev => ({ ...prev, notifications: !prev.notifications }));
+            }
+
+            // Save permissions to preferences
+            await Preferences.set({
+                key: 'permissions',
+                value: JSON.stringify(permissions)
+            });
+        } catch (err) {
+            console.error('Error updating permissions:', err);
+            setError('Failed to update permissions');
         }
     };
 
@@ -213,113 +255,173 @@ const Settings: React.FC = () => {
                         </div>
                     )}
 
-                    {/* Profile Image Section */}
-                    <div className="flex flex-col items-center mb-6">
-                        <div className="relative">
-                            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
-                                {profile?.avatar_url ? (
-                                    <img 
-                                        src={profile.avatar_url} 
-                                        alt="Profile" 
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-gray-200">
-                                        <FaUser className="text-gray-400 text-4xl" />
+                    {/* Tab Navigation */}
+                    <div className="flex space-x-4 mb-6">
+                        <button
+                            className={`flex-1 py-2 px-4 rounded-t-lg font-medium ${
+                                activeTab === 'profile'
+                                    ? 'bg-white text-black'
+                                    : 'bg-gray-200 text-gray-600'
+                            }`}
+                            onClick={() => setActiveTab('profile')}
+                        >
+                            Profile
+                        </button>
+                        <button
+                            className={`flex-1 py-2 px-4 rounded-t-lg font-medium ${
+                                activeTab === 'permissions'
+                                    ? 'bg-white text-black'
+                                    : 'bg-gray-200 text-gray-600'
+                            }`}
+                            onClick={() => setActiveTab('permissions')}
+                        >
+                            Permissions
+                        </button>
+                    </div>
+
+                    {activeTab === 'profile' ? (
+                        <>
+                            {/* Profile Image Section */}
+                            <div className="flex flex-col items-center mb-6">
+                                <div className="relative">
+                                    <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-300 bg-white">
+                                        {profile?.avatar_url ? (
+                                            <img 
+                                                src={profile.avatar_url} 
+                                                alt="Profile" 
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                                <FaUser className="text-gray-400 text-4xl" />
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                    <button
+                                        className="absolute bottom-0 right-0 bg-[#2C2C2C] rounded-full p-2"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <FaCamera className="text-white text-sm" />
+                                    </button>
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        onChange={handleImageUpload}
+                                        accept="image/*"
+                                        className="hidden"
+                                    />
+                                </div>
                             </div>
-                            <button
-                                className="absolute bottom-0 right-0 bg-[#2C2C2C] rounded-full p-2"
-                                onClick={() => fileInputRef.current?.click()}
-                            >
-                                <FaCamera className="text-white text-sm" />
-                            </button>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                onChange={handleImageUpload}
-                                accept="image/*"
-                                className="hidden"
-                            />
-                        </div>
-                    </div>
 
-                    {/* White Container */}
-                    <div className="bg-white rounded-lg p-6 space-y-6">
-                        {/* Email Field */}
-                        <div className="space-y-2">
-                            <label className="text-gray-800 font-medium">Email</label>
-                            <div className="relative">
-                                <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="text"
-                                    value={username}
-                                    readOnly
-                                    className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-600 cursor-not-allowed"
+                            {/* White Container */}
+                            <div className="bg-white rounded-lg p-6 space-y-6">
+                                {/* Email Field */}
+                                <div className="space-y-2">
+                                    <label className="text-gray-800 font-medium">Email</label>
+                                    <div className="relative">
+                                        <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                        <input
+                                            type="text"
+                                            value={username}
+                                            readOnly
+                                            className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-600 cursor-not-allowed"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Full Name Field */}
+                                <div className="space-y-2">
+                                    <label className="text-gray-800 font-medium">Full Name</label>
+                                    <div className="relative">
+                                        <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                        <input
+                                            type="text"
+                                            value={fullName}
+                                            onChange={(e) => setFullName(e.target.value)}
+                                            className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Password Fields */}
+                                <div className="space-y-2">
+                                    <label className="text-gray-800 font-medium">Current Password</label>
+                                    <div className="relative">
+                                        <FaLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                        <input
+                                            type="password"
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                            placeholder="Enter current password"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-gray-800 font-medium">New Password</label>
+                                    <div className="relative">
+                                        <FaLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                        <input
+                                            type="password"
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                            placeholder="Enter new password"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-gray-800 font-medium">Confirm Password</label>
+                                    <div className="relative">
+                                        <FaLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                                        <input
+                                            type="password"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
+                                            placeholder="Confirm new password"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="bg-white rounded-lg p-6 space-y-6">
+                            <h2 className="text-xl font-bold text-gray-800 mb-4">Device Permissions</h2>
+                            
+                            {/* Camera Permission */}
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div className="flex items-center space-x-4">
+                                    <FaCamera className="text-gray-600 text-xl" />
+                                    <div>
+                                        <h3 className="font-medium text-gray-800">Camera Access</h3>
+                                        <p className="text-sm text-gray-500">Required for QR code scanning</p>
+                                    </div>
+                                </div>
+                                <IonToggle
+                                    checked={permissions.camera}
+                                    onIonChange={() => handlePermissionChange('camera')}
+                                />
+                            </div>
+
+                            {/* Notifications Permission */}
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div className="flex items-center space-x-4">
+                                    <FaBell className="text-gray-600 text-xl" />
+                                    <div>
+                                        <h3 className="font-medium text-gray-800">Notifications</h3>
+                                        <p className="text-sm text-gray-500">Receive transaction alerts</p>
+                                    </div>
+                                </div>
+                                <IonToggle
+                                    checked={permissions.notifications}
+                                    onIonChange={() => handlePermissionChange('notifications')}
                                 />
                             </div>
                         </div>
-
-                        {/* Full Name Field */}
-                        <div className="space-y-2">
-                            <label className="text-gray-800 font-medium">Full Name</label>
-                            <div className="relative">
-                                <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="text"
-                                    value={fullName}
-                                    onChange={(e) => setFullName(e.target.value)}
-                                    className="w-full p-3 pl-10 rounded-md bg-gray-100 text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Current Password Field */}
-                        <div className="space-y-2">
-                            <label className="text-gray-800 font-medium">Current Password</label>
-                            <div className="relative">
-                                <FaLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="password"
-                                    value={currentPassword}
-                                    onChange={(e) => setCurrentPassword(e.target.value)}
-                                    className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
-                                    placeholder="Enter current password"
-                                />
-                            </div>
-                        </div>
-
-                        {/* New Password Field */}
-                        <div className="space-y-2">
-                            <label className="text-gray-800 font-medium">New Password</label>
-                            <div className="relative">
-                                <FaLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="password"
-                                    value={newPassword}
-                                    onChange={(e) => setNewPassword(e.target.value)}
-                                    className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
-                                    placeholder="Enter new password"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Confirm Password Field */}
-                        <div className="space-y-2">
-                            <label className="text-gray-800 font-medium">Confirm Password</label>
-                            <div className="relative">
-                                <FaLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full p-3 pl-10 rounded-md bg-[#F5F5F5] text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#5EC95F]"
-                                    placeholder="Confirm new password"
-                                />
-                            </div>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Save Button */}
                     <button

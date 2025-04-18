@@ -1,5 +1,5 @@
 import { IonContent, IonPage } from '@ionic/react';
-import { FaInfoCircle } from 'react-icons/fa';
+import { FaInfoCircle, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
@@ -10,6 +10,7 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -136,13 +137,22 @@ const Login: React.FC = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 className="mb-4 w-full p-3 rounded-md bg-white text-black placeholder-gray-500"
               />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mb-6 w-full p-3 rounded-md bg-white text-black placeholder-gray-500"
-              />
+              <div className="relative mb-6">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500"
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <FaEyeSlash /> : <FaEye />}
+                </button>
+              </div>
               <button
                 className="bg-[#2C2C2C] text-white font-bold py-3 px-6 rounded-md shadow-md mb-4 w-full"
                 onClick={handleLogin}
