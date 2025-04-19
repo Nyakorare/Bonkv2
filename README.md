@@ -106,7 +106,7 @@ npx cap open ios
 
 ## License
 
-[MIT License](LICENSE)
+[Apache-2.0 License]
 
 ## Contact
 
