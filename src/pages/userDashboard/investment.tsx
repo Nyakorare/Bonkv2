@@ -101,6 +101,8 @@ const InvestmentPage: React.FC = () => {
   const [investmentHoldings, setInvestmentHoldings] = useState<InvestmentHolding[]>([]);
   const [investmentOptions, setInvestmentOptions] = useState<Investment[]>([]);
   const [agreementDeclined, setAgreementDeclined] = useState(false);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [checkoutAmount, setCheckoutAmount] = useState('');
 
   // Mock performance history data
   const performanceHistory: PerformanceData[] = [
@@ -287,10 +289,6 @@ const InvestmentPage: React.FC = () => {
     try {
       setLoading(true);
       
-      // Get user agent and IP address
-      const userAgent = navigator.userAgent;
-      const ipAddress = ''; // This would typically come from a server-side request
-      
       // Create investment agreement
       const { data: agreement, error: agreementError } = await supabase
         .from('investment_agreements')
@@ -298,8 +296,6 @@ const InvestmentPage: React.FC = () => {
           account_id: accountId,
           agreement_text: agreementText,
           signed_at: new Date().toISOString(),
-          ip_address: ipAddress,
-          user_agent: userAgent,
           version: '1.0'
         })
         .select()
@@ -396,6 +392,7 @@ const InvestmentPage: React.FC = () => {
       if (updateInvestmentError) throw updateInvestmentError;
       
       // 3. Create a transaction record
+      const referenceId = `INV-${Date.now()}`;
       const { error: transactionError } = await supabase
         .from('investment_transactions')
         .insert({
@@ -404,7 +401,7 @@ const InvestmentPage: React.FC = () => {
           transaction_type: 'investment_deposit',
           description: 'Added funds to investment balance',
           status: 'completed',
-          reference_id: `INV-${Date.now()}`
+          reference_id: referenceId
         });
         
       if (transactionError) throw transactionError;
@@ -415,10 +412,10 @@ const InvestmentPage: React.FC = () => {
         .insert({
           account_id: account.id,
           amount: -amount,
-          transaction_type: 'investment',
+          transaction_type: 'transfer',
           description: 'Transfer to investment balance',
           status: 'completed',
-          reference_id: `INV-${Date.now()}`
+          reference_id: referenceId
         });
         
       if (regularTransactionError) throw regularTransactionError;
@@ -494,6 +491,7 @@ const InvestmentPage: React.FC = () => {
       if (updateProfileError) throw updateProfileError;
       
       // Create investment transaction
+      const referenceId = `INV-${Date.now()}`;
       const { error: transactionError } = await supabase
         .from('investment_transactions')
         .insert({
@@ -502,7 +500,7 @@ const InvestmentPage: React.FC = () => {
           transaction_type: 'investment_withdrawal',
           description: `Investment in ${selectedInvestment.name}`,
           status: 'completed',
-          reference_id: `INV-${Date.now()}`
+          reference_id: referenceId
         });
         
       if (transactionError) throw transactionError;
@@ -543,6 +541,123 @@ const InvestmentPage: React.FC = () => {
       month: 'short',
       day: 'numeric'
     });
+  };
+
+  const checkoutFromInvestment = async () => {
+    if (!investmentProfile || !checkoutAmount || isNaN(Number(checkoutAmount)) || Number(checkoutAmount) <= 0) {
+      return;
+    }
+
+    const amount = Number(checkoutAmount);
+    
+    try {
+      setLoading(true);
+      
+      // Check if user has enough balance in investment profile
+      if (investmentProfile.balance < amount) {
+        setError('Insufficient funds in your investment balance');
+        return;
+      }
+      
+      // Check minimum checkout amount
+      if (amount < 50) {
+        setError('Minimum checkout amount is ₱50');
+        return;
+      }
+      
+      // Get the user's account
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        history.push('/login');
+        return;
+      }
+
+      // Get the user's account
+      const { data: account, error: accountError } = await supabase
+        .from('accounts')
+        .select('id')
+        .eq('email', user.email)
+        .single();
+
+      if (accountError) throw accountError;
+      if (!account) throw new Error('No account found');
+
+      // Get the user's balance from the balances table
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('balances')
+        .select('available_balance')
+        .eq('account_id', account.id)
+        .single();
+
+      if (balanceError) throw balanceError;
+      if (!balanceData) throw new Error('Balance not found');
+      
+      // 1. Update the user's balance in the balances table
+      const newBalance = balanceData.available_balance + amount;
+      const { error: updateBalanceError } = await supabase
+        .from('balances')
+        .update({ available_balance: newBalance, total_balance: newBalance })
+        .eq('account_id', account.id);
+        
+      if (updateBalanceError) throw updateBalanceError;
+      
+      // 2. Update the investment profile balance
+      const newInvestmentBalance = investmentProfile.balance - amount;
+      const { error: updateInvestmentError } = await supabase
+        .from('investment_profiles')
+        .update({ balance: newInvestmentBalance })
+        .eq('id', investmentProfile.id);
+        
+      if (updateInvestmentError) throw updateInvestmentError;
+      
+      // 3. Create an investment transaction record
+      const referenceId = `INV-CHECKOUT-${Date.now()}`;
+      const { error: transactionError } = await supabase
+        .from('investment_transactions')
+        .insert({
+          account_id: account.id,
+          amount: -amount,
+          transaction_type: 'investment_withdrawal',
+          description: 'Checkout from investment balance',
+          status: 'completed',
+          reference_id: referenceId
+        });
+        
+      if (transactionError) throw transactionError;
+      
+      // 4. Create a regular transaction record
+      const { error: regularTransactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: account.id,
+          amount: amount,
+          transaction_type: 'transfer',
+          description: 'Transfer from investment balance',
+          status: 'completed',
+          reference_id: referenceId
+        });
+        
+      if (regularTransactionError) throw regularTransactionError;
+      
+      // Update local state
+      setInvestmentProfile({
+        ...investmentProfile,
+        balance: newInvestmentBalance
+      });
+      
+      setShowCheckoutModal(false);
+      setCheckoutAmount('');
+      setSuccessMessage(`Successfully checked out ${formatCurrency(amount)} to your main account`);
+      setShowSuccessAlert(true);
+      
+      // Refresh data
+      await fetchInvestmentData();
+    } catch (err) {
+      console.error('Error checking out from investment:', err);
+      setError('Failed to checkout from investment');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -643,10 +758,16 @@ const InvestmentPage: React.FC = () => {
                   {/* Add Funds Button */}
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <button 
-                      className="w-full bg-[#5EC95F] text-white py-3 rounded-xl font-bold flex items-center justify-center"
+                      className="w-full bg-[#5EC95F] text-white py-3 rounded-xl font-bold flex items-center justify-center mb-3"
                       onClick={() => setShowAddFundsModal(true)}
                     >
                       <FaPlus className="mr-2" /> Add Funds
+                    </button>
+                    <button 
+                      className="w-full bg-white text-[#5EC95F] border border-[#5EC95F] py-3 rounded-xl font-bold flex items-center justify-center"
+                      onClick={() => setShowCheckoutModal(true)}
+                    >
+                      <FaMoneyBillWave className="mr-2" /> Checkout
                     </button>
                     <div className="text-xs text-gray-500 mt-2 text-center">
                       Account Balance: {formatCurrency(accountBalance)}
@@ -1032,6 +1153,58 @@ const InvestmentPage: React.FC = () => {
                          !selectedInvestment || Number(investAmount) < selectedInvestment.min_investment}
               >
                 Confirm Investment
+              </IonButton>
+            </div>
+          </div>
+        </IonModal>
+
+        {/* Checkout Modal */}
+        <IonModal isOpen={showCheckoutModal} onDidDismiss={() => setShowCheckoutModal(false)}>
+          <div className="h-full flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm">
+              <h2 className="text-xl font-bold text-black">Checkout from Investment</h2>
+              <button 
+                onClick={() => setShowCheckoutModal(false)}
+                className="text-gray-500 hover:text-gray-700 p-2"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="bg-white rounded-xl shadow-sm p-5 mb-4 text-black">
+                <h3 className="text-lg font-bold mb-4">Transfer Funds</h3>
+                <p className="text-gray-600 mb-4">
+                  Transfer funds from your investment balance to your main account balance.
+                </p>
+                <p className="text-gray-600 mb-4">
+                  <strong>Available Investment Balance:</strong> {investmentProfile ? formatCurrency(investmentProfile.balance) : '₱0'}
+                </p>
+                <p className="text-gray-600 mb-4">
+                  <strong>Minimum Checkout Amount:</strong> ₱50
+                </p>
+                <div className="mb-4">
+                  <label className="block text-gray-700 text-sm font-bold mb-2">
+                    Amount
+                  </label>
+                  <IonInput
+                    type="number"
+                    value={checkoutAmount}
+                    onIonChange={e => setCheckoutAmount(e.detail.value || '')}
+                    placeholder="Enter amount"
+                    className="border border-gray-300 rounded-lg p-2 w-full"
+                  />
+                </div>
+              </div>
+              
+              <IonButton 
+                expand="block"
+                className="w-full bg-[#5EC95F] text-white py-4 rounded-xl font-bold"
+                onClick={checkoutFromInvestment}
+                disabled={!checkoutAmount || isNaN(Number(checkoutAmount)) || Number(checkoutAmount) <= 0 || 
+                         !investmentProfile || Number(checkoutAmount) > investmentProfile.balance || 
+                         Number(checkoutAmount) < 50}
+              >
+                Checkout
               </IonButton>
             </div>
           </div>

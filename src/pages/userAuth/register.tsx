@@ -90,18 +90,20 @@ const Register: React.FC = () => {
       // Generate a random account number
       const accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
 
-      // Create account
+      // Create account - REMOVED password_hash field
       const { data: accountData, error: accountError } = await supabase
         .from('accounts')
         .insert({
           email: formData.email,
-          password_hash: formData.password, // Note: In production, this should be hashed
           account_number: accountNumber
         })
         .select()
         .single();
 
-      if (accountError) throw accountError;
+      if (accountError) {
+        console.error('Account creation error:', accountError);
+        throw new Error(`Database error saving new user: ${accountError.message}`);
+      }
 
       // Create profile with default avatar
       const { error: profileError } = await supabase
@@ -113,7 +115,10 @@ const Register: React.FC = () => {
           avatar_url: '/default-profile.png'
         });
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        throw new Error(`Error creating profile: ${profileError.message}`);
+      }
 
       // Create initial balance
       const { error: balanceError } = await supabase
@@ -124,7 +129,10 @@ const Register: React.FC = () => {
           total_balance: 50.00
         });
 
-      if (balanceError) throw balanceError;
+      if (balanceError) {
+        console.error('Balance creation error:', balanceError);
+        throw new Error(`Error creating balance: ${balanceError.message}`);
+      }
 
       // Create initial transaction
       const { error: transactionError } = await supabase
@@ -138,7 +146,10 @@ const Register: React.FC = () => {
           reference_id: `INIT-${Date.now()}`
         });
 
-      if (transactionError) throw transactionError;
+      if (transactionError) {
+        console.error('Transaction creation error:', transactionError);
+        throw new Error(`Error creating transaction: ${transactionError.message}`);
+      }
 
       // Sign in the user immediately after registration
       const { error: signInError } = await supabase.auth.signInWithPassword({

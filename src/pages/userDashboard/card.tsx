@@ -158,7 +158,7 @@ const CardPage: React.FC = () => {
 
       // Generate a random card number (last 4 digits)
       const lastFourDigits = Math.floor(1000 + Math.random() * 9000).toString();
-      const cardNumber = `•••• •••• •••• ${lastFourDigits}`;
+      const fullCardNumber = `1234 5678 9012 ${lastFourDigits}`;
       
       // Generate expiry date (2 years from now)
       const expiryDate = new Date();
@@ -173,7 +173,7 @@ const CardPage: React.FC = () => {
         .from('cards')
         .insert({
           account_id: account.id,
-          card_number: cardNumber,
+          card_number: fullCardNumber,
           expiry_date: formattedExpiryDate,
           cvv: cvv,
           card_holder: `${user.user_metadata?.first_name || 'User'} ${user.user_metadata?.last_name || ''}`,
@@ -237,6 +237,11 @@ const CardPage: React.FC = () => {
     });
   };
 
+  const maskCardNumber = (cardNumber: string) => {
+    const lastFourDigits = cardNumber.slice(-4);
+    return `•••• •••• •••• ${lastFourDigits}`;
+  };
+
   return (
     <IonPage>
       <IonContent 
@@ -294,7 +299,7 @@ const CardPage: React.FC = () => {
                 <div className="mt-8 mb-4">
                   <div className="text-gray-300 text-sm">Card Number</div>
                       <div className="text-white text-xl font-mono tracking-wider">
-                        {showCardDetails ? cardData.card_number : `•••• •••• •••• ${cardData.card_number.slice(-4)}`}
+                        {showCardDetails ? cardData.card_number : maskCardNumber(cardData.card_number)}
                       </div>
                 </div>
                 
