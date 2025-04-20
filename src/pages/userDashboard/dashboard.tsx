@@ -532,6 +532,13 @@ const Dashboard: React.FC = () => {
             // Determine transaction type based on reference number
             let transactionType: 'deposit' | 'withdrawal' | 'transfer';
             
+            // Generate a unique reference number with timestamp and random string
+            const generateUniqueReference = (prefix: string) => {
+                const timestamp = Date.now();
+                const random = Math.random().toString(36).substring(2, 8);
+                return `${prefix}-${timestamp}-${random}`;
+            };
+
             // Check if reference number starts with OTCW or OTCD
             if (referenceNumber && typeof referenceNumber === 'string') {
                 if (referenceNumber.startsWith('OTCW')) {
@@ -574,11 +581,12 @@ const Dashboard: React.FC = () => {
                 }
             }
 
-            // Generate a proper reference number for transfers if not provided
+            // Generate a unique reference number based on transaction type
             let finalReferenceNumber = referenceNumber;
-            if (transactionType === 'transfer' && (!referenceNumber || !referenceNumber.startsWith('TRF'))) {
-                // Generate a transfer reference number with TRF prefix
-                finalReferenceNumber = `TRF-${Math.floor(100000 + Math.random() * 900000)}`;
+            if (!finalReferenceNumber || !finalReferenceNumber.startsWith('TRF')) {
+                const prefix = transactionType === 'transfer' ? 'TRF' : 
+                             transactionType === 'withdrawal' ? 'OTCW' : 'OTCD';
+                finalReferenceNumber = generateUniqueReference(prefix);
             }
 
             // Set transaction details
@@ -617,11 +625,15 @@ const Dashboard: React.FC = () => {
             return;
         }
         
-        // Generate a proper reference number for transfers if not already set
-        let finalReferenceNumber = transactionDetails?.referenceNumber;
-        if (!finalReferenceNumber || !finalReferenceNumber.startsWith('TRF')) {
-            finalReferenceNumber = `TRF-${Math.floor(100000 + Math.random() * 900000)}`;
-        }
+        // Generate a unique reference number for transfers
+        const generateUniqueReference = (prefix: string) => {
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substring(2, 8);
+            return `${prefix}-${timestamp}-${random}`;
+        };
+        
+        // Generate a unique reference number for transfers
+        const finalReferenceNumber = generateUniqueReference('TRF');
         
         // Update transaction details with the entered amount and description
         if (transactionDetails) {
@@ -683,10 +695,10 @@ const Dashboard: React.FC = () => {
                         setTransactionDetails(null);
                         setQrData(null);
                         
-                        // Refresh the page after a short delay
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1500);
+                        // Remove the automatic page reload
+                        // setTimeout(() => {
+                        //     window.location.reload();
+                        // }, 1500);
                     } else {
                         // Transaction is still pending, show appropriate message
                         alert('Transaction is still processing. Please try again in a few moments.');
@@ -702,6 +714,12 @@ const Dashboard: React.FC = () => {
         } finally {
             setIsRefreshing(false);
         }
+    };
+
+    const generateUniqueReference = (prefix: string) => {
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 8);
+        return `${prefix}-${timestamp}-${random}`;
     };
 
     const handleConfirmTransaction = async () => {
@@ -746,6 +764,12 @@ const Dashboard: React.FC = () => {
 
             if (receiverBalanceError) throw receiverBalanceError;
 
+            // Generate new unique reference numbers for both transactions
+            const senderReferenceId = generateUniqueReference(transactionDetails.type === 'transfer' ? 'TRF' : 
+                                                           transactionDetails.type === 'withdrawal' ? 'OTCW' : 'OTCD');
+            const receiverReferenceId = generateUniqueReference(transactionDetails.type === 'transfer' ? 'TRF' : 
+                                                             transactionDetails.type === 'withdrawal' ? 'OTCW' : 'OTCD');
+
             // For withdrawals, the scanned account (receiver) is the one giving money to the scanner (sender)
             if (transactionDetails.type === 'withdrawal') {
                 // Validate receiver's balance for withdrawal
@@ -788,7 +812,7 @@ const Dashboard: React.FC = () => {
                         transaction_type: 'withdrawal',
                         description: `Withdrawal to ${currentAccount.account_number}`,
                         status: 'completed',
-                        reference_id: transactionDetails.referenceNumber
+                        reference_id: receiverReferenceId
                     });
 
                 if (receiverTransactionError) throw receiverTransactionError;
@@ -802,7 +826,7 @@ const Dashboard: React.FC = () => {
                         transaction_type: 'withdrawal',
                         description: `Withdrawal from ${receiverAccount.id}`,
                         status: 'completed',
-                        reference_id: transactionDetails.referenceNumber
+                        reference_id: senderReferenceId
                     });
 
                 if (senderTransactionError) throw senderTransactionError;
@@ -810,7 +834,7 @@ const Dashboard: React.FC = () => {
                 // Update local state with new balance
                 setBalance(newSenderBalance);
             } else {
-                // Handle deposits and transfers as before
+                // Handle deposits and transfers
                 // Validate sender's balance
                 if (senderBalance.available_balance < transactionDetails.amount) {
                     throw new Error('Insufficient balance for this transaction');
@@ -851,7 +875,7 @@ const Dashboard: React.FC = () => {
                         transaction_type: transactionDetails.type,
                         description: `${transactionDetails.type === 'deposit' ? 'Deposit to' : 'Transfer to'} ${transactionDetails.receiverAccountNumber}`,
                         status: 'completed',
-                        reference_id: transactionDetails.referenceNumber
+                        reference_id: senderReferenceId
                     });
 
                 if (senderTransactionError) throw senderTransactionError;
@@ -865,7 +889,7 @@ const Dashboard: React.FC = () => {
                         transaction_type: transactionDetails.type,
                         description: `${transactionDetails.type === 'deposit' ? 'Deposit from' : 'Transfer from'} ${currentAccount.account_number}`,
                         status: 'completed',
-                        reference_id: transactionDetails.referenceNumber
+                        reference_id: receiverReferenceId
                     });
 
                 if (receiverTransactionError) throw receiverTransactionError;
@@ -874,20 +898,21 @@ const Dashboard: React.FC = () => {
                 setBalance(newSenderBalance);
             }
 
-            // Show success modal
+            // Show success modal and clean up states
             setShowConfirmationModal(false);
             setShowSuccessModal(true);
             setTransactionDetails(null);
             setQrData(null);
-            
-            // Refresh the page after successful transaction
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
+            setTransferAmount('');
+            setTransferDescription('');
             
         } catch (err) {
             console.error('Error confirming transaction:', err);
-            alert(err instanceof Error ? err.message : 'Error confirming transaction. Please try again.');
+            // Only show error modal if there's an actual error
+            if (err instanceof Error) {
+                setError(err.message);
+                setShowErrorModal(true);
+            }
         }
     };
 
@@ -913,7 +938,8 @@ const Dashboard: React.FC = () => {
             setTransferAmount('');
             setTransferDescription('');
 
-            // Refresh the page after cancelling transaction
+            // Navigate back to dashboard and refresh
+            history.push('/dashboard');
             window.location.reload();
 
         } catch (error) {
@@ -1319,45 +1345,56 @@ const Dashboard: React.FC = () => {
                         <div className="flex flex-col space-y-4 w-full max-w-md">
                             <button
                                 className="bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md"
-                                onClick={handleConfirmTransaction}
+                                onClick={() => {
+                                    // Show double-check confirmation
+                                    if (window.confirm('Please verify that all transaction details are correct. This action cannot be undone. Do you want to proceed?')) {
+                                        handleConfirmTransaction();
+                                    }
+                                }}
                             >
                                 Confirm
                             </button>
                             <button
                                 className="bg-gray-600 text-white font-bold py-3 px-8 rounded-md"
                                 onClick={() => {
-                                    // Simply close the modal and refresh the page
-                                    setShowConfirmationModal(false);
+                                    console.log('Cancel button clicked, cleaning up...');
+                                    // Clear all scanned data and states
+                                    setScannedData(null);
                                     setTransactionDetails(null);
                                     setQrData(null);
                                     setTransferAmount('');
                                     setTransferDescription('');
+                                    
+                                    // Reset scanner states
+                                    setShowScannerModal(false);
+                                    setIsScanning(false);
+                                    setIsCameraReady(false);
+                                    setShowFileInput(false);
+                                    
+                                    // Stop QR code scanning
+                                    if (codeReader.current) {
+                                        console.log('Stopping QR code reader...');
+                                        codeReader.current = null;
+                                    }
+                                    
+                                    // Clean up camera resources
+                                    if (videoRef.current && videoRef.current.srcObject) {
+                                        const stream = videoRef.current.srcObject as MediaStream;
+                                        stream.getTracks().forEach(track => {
+                                            track.stop();
+                                        });
+                                        videoRef.current.srcObject = null;
+                                    }
+                                    
+                                    // Reset scan flag
+                                    hasScanned.current = false;
+                                    
+                                    // Navigate back to dashboard and refresh
+                                    history.push('/dashboard');
                                     window.location.reload();
                                 }}
                             >
                                 Cancel
-                            </button>
-                            <button
-                                className="bg-blue-500 text-white font-bold py-3 px-8 rounded-md flex items-center justify-center space-x-2"
-                                onClick={handleRefreshTransaction}
-                                disabled={isRefreshing}
-                            >
-                                {isRefreshing ? (
-                                    <>
-                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        <span>Refreshing...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                        <span>Refresh Status</span>
-                                    </>
-                                )}
                             </button>
                         </div>
                     </div>
@@ -1369,6 +1406,7 @@ const Dashboard: React.FC = () => {
                     setShowScannerModal(false);
                     setTransferAmount('');
                     setTransferDescription('');
+                    window.location.reload();
                 }}>
                     <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
                         <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-4">
@@ -1376,8 +1414,12 @@ const Dashboard: React.FC = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                             </svg>
                         </div>
-                        <h2 className="text-2xl font-bold text-black">Transaction Completed</h2>
-                        <p className="text-gray-600 text-center">Your transaction has been successfully processed.</p>
+                        <h2 className="text-2xl font-bold text-black">Transaction Successful</h2>
+                        <div className="text-gray-600 text-center space-y-2">
+                            <p>Your transfer has been completed successfully.</p>
+                            <p className="text-sm">The recipient will receive the funds shortly.</p>
+                            <p className="text-sm">You can view the transaction details in your transaction history.</p>
+                        </div>
                         <button
                             className="bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md w-full max-w-md"
                             onClick={() => {
@@ -1471,9 +1513,18 @@ const Dashboard: React.FC = () => {
                                         className="flex-1 bg-gray-600 text-white font-bold py-3 px-8 rounded-md"
                                         onClick={() => {
                                             console.log('Cancel button clicked, cleaning up...');
+                                            // Clear all scanned data and states
+                                            setScannedData(null);
+                                            setTransactionDetails(null);
+                                            setQrData(null);
+                                            setTransferAmount('');
+                                            setTransferDescription('');
+                                            
+                                            // Reset scanner states
                                             setShowScannerModal(false);
                                             setIsScanning(false);
                                             setIsCameraReady(false);
+                                            setShowFileInput(false);
                                             
                                             // Stop QR code scanning
                                             if (codeReader.current) {
@@ -1492,6 +1543,10 @@ const Dashboard: React.FC = () => {
                                             
                                             // Reset scan flag
                                             hasScanned.current = false;
+                                            
+                                            // Navigate back to dashboard and refresh
+                                            history.push('/dashboard');
+                                            window.location.reload();
                                         }}
                                     >
                                         Cancel

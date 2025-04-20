@@ -209,15 +209,87 @@ const Transfer: React.FC = () => {
 
             const amount = parseFloat(formData.amount);
 
-            // Start transaction
-            const { error: transactionError } = await supabase.rpc('transfer_money', {
-                sender_id: senderAccount.id,
-                recipient_id: recipientAccount.id,
+            // Generate a unique reference ID with timestamp and random number
+            const timestamp = Date.now();
+            const randomNum = Math.floor(Math.random() * 10000);
+            const referenceId = `TRF-${timestamp}-${randomNum}`;
+
+            // Get sender's current balance
+            const { data: senderBalance, error: senderBalanceError } = await supabase
+                .from('balances')
+                .select('available_balance, total_balance')
+                .eq('account_id', senderAccount.id)
+                .single();
+
+            if (senderBalanceError) throw senderBalanceError;
+
+            // Get recipient's current balance
+            const { data: recipientBalance, error: recipientBalanceError } = await supabase
+                .from('balances')
+                .select('available_balance, total_balance')
+                .eq('account_id', recipientAccount.id)
+                .single();
+
+            if (recipientBalanceError) throw recipientBalanceError;
+
+            // Check if sender has sufficient balance
+            if (senderBalance.available_balance < amount) {
+                throw new Error('Insufficient balance');
+            }
+
+            // Calculate new balances
+            const newSenderBalance = senderBalance.available_balance - amount;
+            const newRecipientBalance = recipientBalance.available_balance + amount;
+
+            // Update sender's balance
+            const { error: updateSenderError } = await supabase
+                .from('balances')
+                .update({ 
+                    available_balance: newSenderBalance,
+                    total_balance: newSenderBalance
+                })
+                .eq('account_id', senderAccount.id);
+
+            if (updateSenderError) throw updateSenderError;
+
+            // Update recipient's balance
+            const { error: updateRecipientError } = await supabase
+                .from('balances')
+                .update({ 
+                    available_balance: newRecipientBalance,
+                    total_balance: newRecipientBalance
+                })
+                .eq('account_id', recipientAccount.id);
+
+            if (updateRecipientError) throw updateRecipientError;
+
+            // Create transaction record for sender
+            const { error: senderTransactionError } = await supabase
+                .from('transactions')
+                .insert({
+                    account_id: senderAccount.id,
+                    amount: -amount,
+                    transaction_type: 'transfer',
+                    description: formData.description || `Transfer to ${formData.accountNumber}`,
+                    status: 'completed',
+                    reference_id: referenceId
+                });
+
+            if (senderTransactionError) throw senderTransactionError;
+
+            // Create transaction record for recipient
+            const { error: recipientTransactionError } = await supabase
+                .from('transactions')
+                .insert({
+                    account_id: recipientAccount.id,
                 amount: amount,
-                description: formData.description || 'Transfer'
+                    transaction_type: 'transfer',
+                    description: formData.description || `Transfer from ${myAccountNumber}`,
+                    status: 'completed',
+                    reference_id: `${referenceId}-R`
             });
 
-            if (transactionError) throw transactionError;
+            if (recipientTransactionError) throw recipientTransactionError;
 
             setSuccess(true);
             // Add a small delay to show the success message
@@ -240,8 +312,10 @@ const Transfer: React.FC = () => {
             return;
         }
 
-        // Generate a unique reference number
-        const referenceNumber = `OTC-${Math.floor(100000 + Math.random() * 900000)}`;
+        // Generate a unique reference number with timestamp and random number
+        const timestamp = Date.now();
+        const randomNum = Math.floor(Math.random() * 10000);
+        const referenceNumber = `QR-${timestamp}-${randomNum}`;
         
         // Create QR data with transaction type
         const qrData = JSON.stringify({
@@ -400,6 +474,17 @@ const Transfer: React.FC = () => {
             // Validate amount
             if (amount <= 0) {
                 throw new Error('Invalid amount: Amount must be greater than zero');
+            }
+
+            // Check if this reference number has already been used
+            const { data: existingTransaction, error: transactionError } = await supabase
+                .from('transactions')
+                .select('id')
+                .eq('reference_id', referenceNumber)
+                .single();
+
+            if (existingTransaction) {
+                throw new Error('This QR code has already been used');
             }
 
             // Get the scanned account's data

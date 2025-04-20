@@ -32,6 +32,11 @@ const Deposit: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [showScannerConfirmModal, setShowScannerConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [transactionDetails, setTransactionDetails] = useState<{ receiverAccountNumber: string; amount: number } | null>(null);
+  const [qrData, setQrData] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -285,14 +290,13 @@ const Deposit: React.FC = () => {
       setOtcReferenceNumber('');
       setIsOTCDepositComplete(true);
       
-      // Refresh the page after successful transaction
-      setTimeout(() => {
-        window.location.reload();
-      }, 3000);
+      // Show success modal
+      setShowSuccessModal(true);
       
     } catch (err) {
       console.error('Error confirming deposit:', err);
-      alert(err instanceof Error ? err.message : 'Error confirming deposit. Please try again.');
+      setError(err instanceof Error ? err.message : 'Error confirming deposit. Please try again.');
+      setShowErrorModal(true);
     }
   };
 
@@ -363,6 +367,211 @@ const Deposit: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleDeposit = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Generate a unique reference number with timestamp and random string
+      const generateUniqueReference = (prefix: string) => {
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 8);
+        return `${prefix}-${timestamp}-${random}`;
+      };
+
+      const referenceNumber = generateUniqueReference('OTCD');
+
+      // Get current user's account
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user found');
+
+      const { data: account, error: accountError } = await supabase
+        .from('accounts')
+        .select('id, account_number')
+        .eq('email', user.email)
+        .single();
+
+      if (accountError) throw accountError;
+
+      // Create transaction record
+      const { error: transactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: account.id,
+          amount: parseFloat(depositAmount),
+          transaction_type: 'deposit',
+          description: 'Deposit',
+          status: 'completed',
+          reference_id: referenceNumber
+        });
+
+      if (transactionError) throw transactionError;
+
+      // Update balance
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('balances')
+        .select('available_balance, total_balance')
+        .eq('account_id', account.id)
+        .single();
+
+      if (balanceError) throw balanceError;
+
+      const newBalance = balanceData.available_balance + parseFloat(depositAmount);
+
+      const { error: updateError } = await supabase
+        .from('balances')
+        .update({
+          available_balance: newBalance,
+          total_balance: newBalance
+        })
+        .eq('account_id', account.id);
+
+      if (updateError) throw updateError;
+
+      // Show success message and redirect
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        history.push('/dashboard');
+      }, 2000);
+
+    } catch (err) {
+      console.error('Error processing deposit:', err);
+      setError(err instanceof Error ? err.message : 'Failed to process deposit');
+      setShowErrorModal(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateUniqueReference = (prefix: string) => {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `${prefix}-${timestamp}-${random}`;
+  };
+
+  const handleConfirmTransaction = async () => {
+    try {
+      if (!transactionDetails) return;
+
+      // Get current user's account
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user found');
+
+      const { data: currentAccount, error: accountError } = await supabase
+        .from('accounts')
+        .select('id, account_number')
+        .eq('email', user.email)
+        .single();
+
+      if (accountError) throw accountError;
+
+      // Get receiver's account
+      const { data: receiverAccount, error: receiverError } = await supabase
+        .from('accounts')
+        .select('id')
+        .eq('account_number', transactionDetails.receiverAccountNumber)
+        .single();
+
+      if (receiverError) throw receiverError;
+
+      // Get current balances
+      const { data: senderBalance, error: senderBalanceError } = await supabase
+        .from('balances')
+        .select('available_balance, total_balance')
+        .eq('account_id', currentAccount.id)
+        .single();
+
+      if (senderBalanceError) throw senderBalanceError;
+
+      const { data: receiverBalance, error: receiverBalanceError } = await supabase
+        .from('balances')
+        .select('available_balance, total_balance')
+        .eq('account_id', receiverAccount.id)
+        .single();
+
+      if (receiverBalanceError) throw receiverBalanceError;
+
+      // Generate new unique reference numbers for both transactions
+      const senderReferenceId = generateUniqueReference('OTCD');
+      const receiverReferenceId = generateUniqueReference('OTCD');
+
+      // Validate sender's balance
+      if (senderBalance.available_balance < transactionDetails.amount) {
+        throw new Error('Insufficient balance for this transaction');
+      }
+
+      // Calculate new balances
+      const newSenderBalance = senderBalance.available_balance - transactionDetails.amount;
+      const newReceiverBalance = receiverBalance.available_balance + transactionDetails.amount;
+
+      // Update sender's balance
+      const { error: senderUpdateError } = await supabase
+        .from('balances')
+        .update({ 
+          available_balance: newSenderBalance,
+          total_balance: newSenderBalance
+        })
+        .eq('account_id', currentAccount.id);
+
+      if (senderUpdateError) throw senderUpdateError;
+
+      // Update receiver's balance
+      const { error: receiverUpdateError } = await supabase
+        .from('balances')
+        .update({ 
+          available_balance: newReceiverBalance,
+          total_balance: newReceiverBalance
+        })
+        .eq('account_id', receiverAccount.id);
+
+      if (receiverUpdateError) throw receiverUpdateError;
+
+      // Create transaction record for sender
+      const { error: senderTransactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: currentAccount.id,
+          amount: -transactionDetails.amount,
+          transaction_type: 'deposit',
+          description: `Deposit to ${transactionDetails.receiverAccountNumber}`,
+          status: 'completed',
+          reference_id: senderReferenceId
+        });
+
+      if (senderTransactionError) throw senderTransactionError;
+
+      // Create transaction record for receiver
+      const { error: receiverTransactionError } = await supabase
+        .from('transactions')
+        .insert({
+          account_id: receiverAccount.id,
+          amount: transactionDetails.amount,
+          transaction_type: 'deposit',
+          description: `Deposit from ${currentAccount.account_number}`,
+          status: 'completed',
+          reference_id: receiverReferenceId
+        });
+
+      if (receiverTransactionError) throw receiverTransactionError;
+
+      // Update local state with new balance
+      setBalance(newSenderBalance);
+
+      // Show success modal
+      setShowConfirmModal(false);
+      setShowSuccessModal(true);
+      setTransactionDetails(null);
+      setQrData(null);
+      
+    } catch (err) {
+      console.error('Error confirming transaction:', err);
+      if (err instanceof Error) {
+        setError(err.message);
+        setShowErrorModal(true);
+      }
+    }
   };
 
   return (
@@ -442,9 +651,17 @@ const Deposit: React.FC = () => {
           </div>
               <button
                 className="w-full bg-gray-800 text-white font-bold py-2 px-6 rounded-md"
-                onClick={() => setIsScanning(!isScanning)}
+                onClick={() => {
+                  if (isScanning) {
+                    setIsScanning(false);
+                    history.push('/dashboard');
+                    window.location.reload();
+                  } else {
+                    setIsScanning(true);
+                  }
+                }}
               >
-                {isScanning ? 'Show My QR' : 'Scan QR'}
+                {isScanning ? 'Cancel' : 'Scan QR'}
               </button>
             </div>
           )}
@@ -714,6 +931,39 @@ const Deposit: React.FC = () => {
                 Save Receipt
               </button>
             </div>
+          </div>
+        </IonModal>
+
+        {/* Success Modal */}
+        <IonModal isOpen={showSuccessModal} onDidDismiss={() => {
+          setShowSuccessModal(false);
+          setTimeout(() => {
+            history.push('/dashboard');
+          }, 500);
+        }}>
+          <div className="flex flex-col items-center justify-center h-full bg-white p-6 space-y-6">
+            <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-16 h-16 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-black">Transaction Successful</h2>
+            <div className="text-gray-600 text-center space-y-2">
+              <p>Your deposit has been completed successfully.</p>
+              <p className="text-sm">Your account balance has been updated.</p>
+              <p className="text-sm">You can view the transaction details in your transaction history.</p>
+            </div>
+            <button
+              className="bg-[#5EC95F] text-white font-bold py-3 px-8 rounded-md w-full max-w-md"
+              onClick={() => {
+                setShowSuccessModal(false);
+                setTimeout(() => {
+                  history.push('/dashboard');
+                }, 500);
+              }}
+            >
+              Return to Dashboard
+            </button>
           </div>
         </IonModal>
       </IonContent>
