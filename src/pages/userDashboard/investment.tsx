@@ -521,8 +521,11 @@ const InvestmentPage: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number): string => {
-    return `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+  const formatCurrency = (amount: number | undefined | null): string => {
+    if (amount === undefined || amount === null) {
+      return '₱0.00';
+    }
+    return `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const getRiskColor = (risk: string): string => {
@@ -1084,23 +1087,26 @@ const InvestmentPage: React.FC = () => {
               </div>
               
               <div className="flex flex-col space-y-3">
-                <IonButton 
-                  expand="block"
-                  className="w-full bg-[#5EC95F] text-white py-4 rounded-xl font-bold"
+                <button 
+                  className={`w-full py-4 rounded-xl font-bold transition-all duration-200 flex items-center justify-center ${
+                    agreementAccepted 
+                      ? 'bg-[#5EC95F] text-white hover:bg-[#4AB54B] shadow-lg' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
                   onClick={signAgreement}
                   disabled={!agreementAccepted}
                 >
+                  <FaFileSignature className="mr-2" />
                   Sign Agreement
-                </IonButton>
+                </button>
                 
-                <IonButton 
-                  expand="block"
-                  fill="outline"
-                  className="w-full border-gray-300 text-gray-700 py-4 rounded-xl font-bold"
+                <button 
+                  className="w-full py-4 rounded-xl font-bold border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-all duration-200 flex items-center justify-center"
                   onClick={declineAgreement}
                 >
+                  <FaArrowLeft className="mr-2" />
                   Decline Agreement
-                </IonButton>
+                </button>
               </div>
             </div>
           </div>
@@ -1144,16 +1150,22 @@ const InvestmentPage: React.FC = () => {
                 </div>
               </div>
               
-              <IonButton 
-                expand="block"
-                className="w-full bg-[#5EC95F] text-white py-4 rounded-xl font-bold"
+              <button 
+                className={`w-full py-4 rounded-xl font-bold transition-all duration-200 flex items-center justify-center ${
+                  !investAmount || isNaN(Number(investAmount)) || Number(investAmount) <= 0 || 
+                  !investmentProfile || Number(investAmount) > investmentProfile.balance || 
+                  !selectedInvestment || Number(investAmount) < selectedInvestment.min_investment
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-[#5EC95F] text-white hover:bg-[#4AB54B] shadow-lg'
+                }`}
                 onClick={investInStock}
                 disabled={!investAmount || isNaN(Number(investAmount)) || Number(investAmount) <= 0 || 
                          !investmentProfile || Number(investAmount) > investmentProfile.balance || 
                          !selectedInvestment || Number(investAmount) < selectedInvestment.min_investment}
               >
+                <FaHandHoldingUsd className="mr-2" />
                 Confirm Investment
-              </IonButton>
+              </button>
             </div>
           </div>
         </IonModal>

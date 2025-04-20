@@ -1,7 +1,7 @@
-import { IonContent, IonPage } from '@ionic/react';
-import { FaArrowLeft, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { IonContent, IonPage, IonModal, IonAlert } from '@ionic/react';
+import { FaArrowLeft, FaEye, FaEyeSlash, FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
 const Register: React.FC = () => {
@@ -10,6 +10,12 @@ const Register: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [emailAvailable, setEmailAvailable] = useState(true);
+  const [formValid, setFormValid] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   
   // Form fields
   const [formData, setFormData] = useState({
@@ -19,6 +25,39 @@ const Register: React.FC = () => {
     fullName: '',
   });
 
+  // Check email availability
+  useEffect(() => {
+    const checkEmail = async () => {
+      if (formData.email.includes('@')) {
+        const { data, error } = await supabase
+          .from('accounts')
+          .select('email')
+          .eq('email', formData.email)
+          .single();
+        
+        setEmailAvailable(!data);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (formData.email) checkEmail();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.email]);
+
+  // Validate form
+  useEffect(() => {
+    setFormValid(
+      formData.email.length > 0 &&
+      emailAvailable &&
+      formData.fullName.length >= 2 &&
+      formData.password.length >= 6 &&
+      formData.password === formData.confirmPassword &&
+      acceptedTerms
+    );
+  }, [formData, emailAvailable, acceptedTerms]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -27,151 +66,117 @@ const Register: React.FC = () => {
     }));
   };
 
-  const validateForm = () => {
-    if (!formData.email || !formData.password || !formData.confirmPassword || !formData.fullName) {
-      setError('Please fill in all fields');
-      return false;
-    }
+  const createAccountRecords = async (userId: string, email: string) => {
+    try {
+      const fullNameParts = formData.fullName.split(' ');
+      const firstName = fullNameParts[0];
+      const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(' ') : '';
+      
+      // Create profile record
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([{
+          account_id: userId,
+          first_name: firstName,
+          last_name: lastName
+        }]);
 
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return false;
-    }
+      if (profileError) throw profileError;
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return false;
-    }
+      // Create balance record with initial 50 pesos
+      const { error: balanceError } = await supabase
+        .from('balances')
+        .insert([{
+          account_id: userId,
+          available_balance: 50.00,
+          total_balance: 50.00
+        }]);
 
-    // Basic email validation
-    if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return false;
-    }
+      if (balanceError) throw balanceError;
 
-    return true;
+      // Create initial transaction record
+      const { error: transactionError } = await supabase
+        .from('transactions')
+        .insert([{
+          account_id: userId,
+          amount: 50.00,
+          transaction_type: 'deposit',
+          description: 'Welcome bonus for new account',
+          status: 'completed',
+          reference_id: `WELCOME-${Date.now()}`
+        }]);
+
+      if (transactionError) throw transactionError;
+
+      return true;
+    } catch (error) {
+      console.error('Error creating account records:', error);
+      throw error;
+    }
   };
 
   const handleRegister = async () => {
     try {
       setError('');
       setLoading(true);
-
-      if (!validateForm()) return;
-
-      // Sign up with Supabase
-      const { data, error } = await supabase.auth.signUp({
+  
+      if (!formValid) {
+        setError('Please fill in all fields correctly and accept the terms');
+        return;
+      }
+  
+      // Step 1: Sign up with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           data: {
-            full_name: formData.fullName,
-            email_confirmed: true
-          }
+            full_name: formData.fullName
+          },
+          emailRedirectTo: `${window.location.origin}/login`
         }
       });
-
-      if (error) {
-        if (error.message.includes('User already registered')) {
-          setError('This email is already registered. Please try logging in instead.');
-        } else if (error.message.includes('password')) {
-          setError('Password must be at least 6 characters long');
+  
+      if (authError) {
+        console.error('Full auth error:', authError);
+        if (authError.status === 400) {
+          setError('Invalid email or password format');
+        } else if (authError.message.includes('already registered')) {
+          setError('This email is already registered. Please try logging in.');
         } else {
-          setError(`Registration failed: ${error.message}`);
+          setError(`Registration failed: ${authError.message}`);
         }
+        setLoading(false);
         return;
       }
-
-      if (!data.user) {
-        setError('Registration failed. Please try again.');
-        return;
+  
+      // Step 2: Only proceed if we have a user
+      if (authData.user) {
+        try {
+          await createAccountRecords(authData.user.id, formData.email);
+          setEmailSent(true);
+          setShowConfirmationModal(true);
+        } catch (dbError) {
+          console.error('Database error:', dbError);
+          // Attempt to clean up auth user if DB fails
+          await supabase.auth.admin.deleteUser(authData.user.id);
+          setError('Failed to create account records. Please try again.');
+        }
+      } else {
+        setError('Registration confirmation required. Please check your email.');
       }
-
-      // Generate a random account number
-      const accountNumber = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-
-      // Create account - REMOVED password_hash field
-      const { data: accountData, error: accountError } = await supabase
-        .from('accounts')
-        .insert({
-          email: formData.email,
-          account_number: accountNumber
-        })
-        .select()
-        .single();
-
-      if (accountError) {
-        console.error('Account creation error:', accountError);
-        throw new Error(`Database error saving new user: ${accountError.message}`);
-      }
-
-      // Create profile with default avatar
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          account_id: accountData.id,
-          first_name: formData.fullName.split(' ')[0],
-          last_name: formData.fullName.split(' ').slice(1).join(' '),
-          avatar_url: '/default-profile.png'
-        });
-
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        throw new Error(`Error creating profile: ${profileError.message}`);
-      }
-
-      // Create initial balance
-      const { error: balanceError } = await supabase
-        .from('balances')
-        .insert({
-          account_id: accountData.id,
-          available_balance: 50.00,
-          total_balance: 50.00
-        });
-
-      if (balanceError) {
-        console.error('Balance creation error:', balanceError);
-        throw new Error(`Error creating balance: ${balanceError.message}`);
-      }
-
-      // Create initial transaction
-      const { error: transactionError } = await supabase
-        .from('transactions')
-        .insert({
-          account_id: accountData.id,
-          amount: 50.00,
-          transaction_type: 'deposit',
-          description: 'Initial deposit',
-          status: 'completed',
-          reference_id: `INIT-${Date.now()}`
-        });
-
-      if (transactionError) {
-        console.error('Transaction creation error:', transactionError);
-        throw new Error(`Error creating transaction: ${transactionError.message}`);
-      }
-
-      // Sign in the user immediately after registration
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password
-      });
-
-      if (signInError) {
-        setError('Registration successful but login failed. Please try logging in manually.');
-        history.push('/login');
-        return;
-      }
-
-      // Redirect to dashboard on successful registration and login
-      history.push('/dashboard');
-
+  
+      setLoading(false);
     } catch (err) {
-      console.error('Registration error:', err);
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred during registration');
-    } finally {
+      console.error('Full registration error:', err);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setLoading(false);
     }
+  };
+
+  const handleGoToLogin = () => {
+    setShowConfirmationModal(false);
+    history.push('/login');
   };
 
   return (
@@ -220,14 +225,21 @@ const Register: React.FC = () => {
               />
 
               {/* Email */}
-              <input
-                type="email"
-                name="email"
-                placeholder="Email"
-                value={formData.email}
-                onChange={handleChange}
-                className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
-              />
+              <div className="relative">
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className={`w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B] ${
+                    !emailAvailable ? 'border-red-500' : ''
+                  }`}
+                />
+                {!emailAvailable && (
+                  <p className="text-xs text-red-500 mt-1">Email already registered</p>
+                )}
+              </div>
 
               {/* Password */}
               <div className="relative">
@@ -256,7 +268,9 @@ const Register: React.FC = () => {
                   placeholder="Confirm Password"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B]"
+                  className={`w-full p-3 rounded-md bg-white text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4AB54B] ${
+                    formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword ? 'border-red-500' : ''
+                  }`}
                 />
                 <button
                   type="button"
@@ -265,15 +279,47 @@ const Register: React.FC = () => {
                 >
                   {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
+                {formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                  <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
+                )}
+              </div>
+
+              {/* Terms Checkbox */}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="accept-terms"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="mr-2 accent-[#5EC95F]"
+                />
+                <label htmlFor="accept-terms" className="text-sm text-white">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowTerms(true)}
+                    className="text-blue-300 hover:text-blue-200"
+                  >
+                    Terms & Privacy Policy
+                  </button>
+                </label>
               </div>
               
               {/* Register Button */}
               <button
-                className="w-full bg-[#2C2C2C] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3C3C3C] transition-colors"
+                className="w-full bg-[#2C2C2C] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#3C3C3C] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleRegister}
-                disabled={loading}
+                disabled={!formValid || loading}
               >
-                {loading ? 'Processing...' : 'Register'}
+                {loading ? (
+                  <span className="inline-flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </span>
+                ) : 'Register'}
               </button>
             </div>
           </div>
@@ -291,6 +337,82 @@ const Register: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* Terms Modal */}
+        <IonModal isOpen={showTerms} onDidDismiss={() => setShowTerms(false)}>
+          <div className="h-full flex flex-col bg-white p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-800">Terms & Privacy Policy</h2>
+              <button
+                onClick={() => setShowTerms(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <FaInfoCircle className="text-2xl" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto mb-6 p-4 rounded-lg bg-gray-50">
+              <h3 className="font-bold mb-2">Terms of Service</h3>
+              <p className="mb-4 text-sm text-gray-600">
+                By creating an account, you agree to our Terms of Service. You are responsible for maintaining 
+                the confidentiality of your account and password. You agree to accept responsibility for all 
+                activities that occur under your account.
+              </p>
+              
+              <h3 className="font-bold mb-2">Privacy Policy</h3>
+              <p className="text-sm text-gray-600">
+                We collect personal information to provide and improve our service. Your data will be protected 
+                and never sold to third parties. We may use your email to send important notifications about 
+                your account or service updates.
+              </p>
+            </div>
+            
+            <div className="flex items-center mb-6">
+              <input
+                type="checkbox"
+                id="accept-terms-modal"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mr-2 accent-[#5EC95F]"
+              />
+              <label htmlFor="accept-terms-modal" className="text-sm text-gray-600">
+                I agree to the Terms of Service and Privacy Policy
+              </label>
+            </div>
+            
+            <button
+              className="w-full bg-[#5EC95F] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#4AB54B] transition-colors"
+              onClick={() => setShowTerms(false)}
+            >
+              Close
+            </button>
+          </div>
+        </IonModal>
+
+        {/* Confirmation Modal */}
+        <IonModal isOpen={showConfirmationModal} backdropDismiss={false}>
+          <div className="flex flex-col items-center justify-center h-full p-6 bg-white">
+            <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6 text-center">
+              <div className="flex justify-center mb-4">
+                <FaCheckCircle className="text-[#5EC95F] text-6xl" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Registration Successful!</h2>
+              <p className="text-gray-600 mb-4">
+                A confirmation email has been sent to <span className="font-semibold">{formData.email}</span>. 
+                Please check your inbox and follow the instructions to verify your account.
+              </p>
+              <p className="text-gray-600 mb-6">
+                Once verified, you'll receive ₱50.00 as a welcome bonus in your account!
+              </p>
+              <button
+                className="w-full bg-[#5EC95F] text-white font-bold py-3 px-6 rounded-md shadow-md hover:bg-[#4AB54B] transition-colors"
+                onClick={handleGoToLogin}
+              >
+                Return to Login
+              </button>
+            </div>
+          </div>
+        </IonModal>
       </IonContent>
     </IonPage>
   );
