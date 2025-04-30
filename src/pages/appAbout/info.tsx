@@ -1,5 +1,5 @@
 import { IonContent, IonPage } from '@ionic/react';
-import { FaArrowLeft, FaUsers, FaInfoCircle } from 'react-icons/fa'; // Added icons
+import { FaArrowLeft, FaUsers, FaInfoCircle } from 'react-icons/fa';
 import { useHistory } from 'react-router-dom';
 
 const Info: React.FC = () => {
@@ -15,7 +15,7 @@ const Info: React.FC = () => {
           'height': '100vh'
         }}
       >
-        {/* Header - fixed height */}
+        {/* Header */}
         <div className="flex justify-center items-center p-4 bg-[#5EC95F] sticky top-0 z-10 h-16">
           <FaArrowLeft
             className="absolute left-4 text-black text-2xl cursor-pointer hover:opacity-80 transition-opacity"
@@ -26,7 +26,7 @@ const Info: React.FC = () => {
           </div>
         </div>
 
-        {/* Main Content - fills remaining space without scrolling */}
+        {/* Main Content */}
         <div className="flex flex-col bg-gradient-to-b from-[#5EC95F] to-[#4AB54B]" style={{ height: 'calc(100vh - 64px)' }}>
           {/* Scrollable content container */}
           <div className="flex-1 overflow-y-auto">

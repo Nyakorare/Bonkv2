@@ -42,7 +42,7 @@ const Loading: React.FC = () => {
       }
     };
 
-    // Add a small delay to show the loading screen
+    // Delay
     const timer = setTimeout(checkAuth, 1000);
     return () => clearTimeout(timer);
   }, [history]);

@@ -28,7 +28,7 @@ const Home: React.FC = () => {
           className="flex justify-center items-center h-full w-full bg-[#5EC95F]"
           style={{
             'overflow': 'hidden', // Prevent any overflow
-            'position': 'fixed', // Fix position
+            'position': 'fixed',
             'top': '0',
             'left': '0',
             'right': '0',
