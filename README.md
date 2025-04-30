@@ -43,8 +43,6 @@ A modern, secure mobile banking application built with Ionic, React, and Supabas
 2. Install dependencies:
    ```
    npm install
-   # or
-   yarn install
    ```
 
 3. Set up environment variables:
@@ -56,9 +54,7 @@ A modern, secure mobile banking application built with Ionic, React, and Supabas
 
 4. Start the development server:
    ```
-   npm run dev
-   # or
-   yarn dev
+   ionic serve
    ```
 
 ### Building for Mobile
@@ -66,33 +62,33 @@ A modern, secure mobile banking application built with Ionic, React, and Supabas
 #### Android
 
 ```
-npm run build
-npx cap sync
-npx cap open android
+ionic serve
+ionic cap sync
+ionic cap open android
 ```
 
 #### iOS (macOS only)
 
 ```
-npm run build
-npx cap sync
-npx cap open ios
+ionic run build
+ionic cap sync
+ionic cap open ios
 ```
 
 ## Testing
 
 - Run unit tests:
   ```
-  npm run test.unit
+  ionic run test.unit
   # or
-  yarn test.unit
+  ionic test.unit
   ```
 
 - Run E2E tests:
   ```
-  npm run test.e2e
+  ionic run test.e2e
   # or
-  yarn test.e2e
+  ionic test.e2e
   ```
 
 ## Project Structure
