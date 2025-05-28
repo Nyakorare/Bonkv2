@@ -44,54 +44,29 @@ const Login: React.FC = () => {
     checkSession();
   }, [history]);
 
-  const handleLogin = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
     try {
-      setError('');
-      setLoading(true);
-      
-      // Validate inputs
-      if (!email || !password) {
-        setError('Please fill in all fields');
-        return;
-      }
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+        });
 
-      // Sign in with Supabase
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+        if (error) throw error;
 
-      if (signInError) {
-        throw signInError;
-      }
-
-      if (!data.user) {
-        throw new Error('No user data returned');
-      }
-
-      // Check if user has an account
-      const { data: accountData, error: accountError } = await supabase
-        .from('accounts')
-        .select('id')
-        .eq('email', email)
-        .single();
-
-      if (accountError) {
-        throw accountError;
-      }
-
-      if (!accountData) {
-        throw new Error('Account not found. Please register first.');
-      }
-
-      // Store user session and redirect
-      localStorage.setItem('authToken', data.session?.access_token || '');
-      history.push('/loading');
-      
+        if (data.user?.email === 'gamerboy282004@yahoo.com') {
+            history.push('/admin');
+        } else {
+            history.push('/dashboard');
+        }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+        console.error('Login error:', err);
+        setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 

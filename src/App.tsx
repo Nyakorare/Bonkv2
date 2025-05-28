@@ -14,6 +14,7 @@ import TransactionHistory from './pages/userDashboard/transaction'; // Import th
 import Card from './pages/userDashboard/card'; // Import the Card component
 import Investment from './pages/userDashboard/investment'; // Import the Investment component
 import Settings from './pages/userDashboard/settings'; // Import the Settings component
+import AdminDashboard from './pages/adminDashboard/adminDashboard';
 
 /* Tailwind styles */
 import './theme/tailwind.css'
@@ -82,6 +83,9 @@ const App: React.FC = () => (
         </Route>
         <Route exact path="/investment">
           <Investment />
+        </Route>
+        <Route exact path="/admin">
+          <AdminDashboard />
         </Route>
         <Route exact path="/">
           <Redirect to="/home" />
